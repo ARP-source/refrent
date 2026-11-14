@@ -8,10 +8,15 @@ const http = require("http");
 const path = require("path");
 
 const pkg = require("./package.json");
+const nativeToken = require("crypto").randomBytes(32).toString("hex");
+const debugPort = Number(process.env.RECALL_CDP_PORT || 9338);
+app.commandLine.appendSwitch("remote-debugging-port", String(debugPort));
+app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
 const ROOT = process.env.RECALL_ROOT || (app.isPackaged ? pkg.recallRoot : path.resolve(__dirname, ".."));
-const PORT = Number(process.env.RECALL_PORT || 8000);
-const BASE = `http://127.0.0.1:${PORT}`;
+let PORT = Number(process.env.RECALL_PORT || 8000);
+let BASE = `http://127.0.0.1:${PORT}`;
 const SMOKE = process.env.RECALL_SMOKE; // path: capture a screenshot after load, then quit (used for automated checks)
+const TEST = process.env.RECALL_TEST === "1";
 
 let backend = null;
 let win = null;
@@ -42,7 +47,17 @@ function setStatus(text, isError = false) {
 }
 
 async function ensureBackend() {
-  if ((await get(`${BASE}/api/status`)) === 200) return "reused";
+  // Each desktop owns its native bridge key. A dev server or older app may already use :8000.
+  PORT = await new Promise((resolve, reject) => {
+    const server = require("net").createServer();
+    server.once("error", () => {
+      const fallback = require("net").createServer();
+      fallback.once("error", reject);
+      fallback.listen(0, "127.0.0.1", () => { const port = fallback.address().port; fallback.close(() => resolve(port)); });
+    });
+    server.listen(PORT, "127.0.0.1", () => { const port = server.address().port; server.close(() => resolve(port)); });
+  });
+  BASE = `http://127.0.0.1:${PORT}`;
   const py = path.join(ROOT, "backend", ".venv", "Scripts", "python.exe");
   if (!fs.existsSync(py)) throw new Error(`Python environment not found:\n${py}\n\nRun the one-time setup from the README.`);
   const logFile = path.join(app.getPath("userData"), "backend.log");
@@ -51,7 +66,7 @@ async function ensureBackend() {
   backend = spawn(py, ["main.py"], {
     cwd: path.join(ROOT, "backend"),
     windowsHide: true,
-    env: { ...process.env, PYTHONUNBUFFERED: "1", RECALL_PORT: String(PORT) },
+    env: { ...process.env, PYTHONUNBUFFERED: "1", RECALL_PORT: String(PORT), RECALL_NATIVE: "true", RECALL_NATIVE_KEY: nativeToken, RECALL_CDP_PORT: String(debugPort) },
   });
   backend.stdout.pipe(logStream, { end: false });
   backend.stderr.pipe(logStream, { end: false });
@@ -84,7 +99,7 @@ function createSplash() {
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   splash.loadFile(path.join(__dirname, "splash.html"));
-  splash.once("ready-to-show", () => splash.show());
+  splash.once("ready-to-show", () => { if (!TEST) splash.show(); });
 }
 
 function createWindow() {
@@ -94,29 +109,31 @@ function createWindow() {
     minWidth: 1280,
     minHeight: 760,
     show: false,
-    title: "RecallOS",
+    title: "Referent",
     backgroundColor: "#02070A",
     icon: path.join(__dirname, "icon.png"),
     titleBarStyle: "hidden",
-    titleBarOverlay: { color: "#02070A", symbolColor: "#93d8f7", height: 44 },
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+    frame: false,
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, preload: path.join(__dirname, "preload.js") },
   });
   win.setMenuBarVisibility(false);
+  const native = require("./native-browser")(win, { base: BASE, token: nativeToken, cdp: `http://127.0.0.1:${debugPort}` });
+  native.start();
   // open external links (web results) in the real browser, never inside the app
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) native.open(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
     if (!url.startsWith(BASE)) {
       e.preventDefault();
-      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+      if (/^https?:\/\//i.test(url)) native.open(url);
     }
   });
   win.loadURL(`${BASE}/`);
   win.once("ready-to-show", () => {
     if (!SMOKE) win.maximize();
-    win.show();
+    if (!TEST) win.show();
     if (splash && !splash.isDestroyed()) splash.close();
   });
   if (SMOKE) {
@@ -129,7 +146,7 @@ function createWindow() {
   }
 }
 
-if (!SMOKE && !app.requestSingleInstanceLock()) {
+if (!SMOKE && !TEST && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
@@ -152,7 +169,7 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
       createWindow();
     } catch (err) {
       setStatus(String(err.message || err), true);
-      dialog.showErrorBox("RecallOS could not start", String(err.message || err));
+      dialog.showErrorBox("Referent could not start", String(err.message || err));
       stopBackend();
       app.quit();
     }

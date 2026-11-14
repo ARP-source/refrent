@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, Clock3, FileDiff, Globe, Hand, Loader2, Play, S
 import { useState } from "react";
 import BorderGlow from "@/components/reactbits/BorderGlow";
 import type { RecallState } from "@/lib/useRecall";
+import SearchIntelligence from "./SearchIntelligence";
 
 function when(ts: string | null | undefined) {
   if (!ts) return "";
@@ -69,7 +70,7 @@ export default function AnswerPanel({ s }: { s: RecallState }) {
 
         {/* the memory */}
         {ep && top && (
-          <BorderGlow key={res!.rid + ep.id} animated backgroundColor="#06121b" borderRadius={18} glowColor="199 98 60" glowRadius={28}
+          <BorderGlow key={res!.rid + ep.id} animated backgroundColor="#0c4f80" borderRadius={18} glowColor="199 98 60" glowRadius={28}
             colors={["#0297DE", "#FC734D", "#5fc4f2"]} fillOpacity={0.3}>
             <div className="p-4">
               <div className="text-[16px] font-medium leading-snug text-white">{ep.title}</div>
@@ -89,6 +90,7 @@ export default function AnswerPanel({ s }: { s: RecallState }) {
         )}
 
         {/* edits since then are shown on the page itself (browser banner); here just a one-line nudge */}
+        <SearchIntelligence s={s} />
         {ch && ch.status === "changed" && (
           <div className="flex items-center gap-2 px-1 text-[12px] text-orange-200/90">
             <FileDiff size={13} /> Edited since you looked{ch.edited_by ? ` by ${ch.edited_by}` : ""}

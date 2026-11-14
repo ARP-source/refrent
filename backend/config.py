@@ -41,6 +41,9 @@ class Settings:
         if o.strip()
     )
 
+    native: bool = _bool("RECALL_NATIVE", False)
+    native_key: str = os.getenv("RECALL_NATIVE_KEY", "")
+    cdp_port: int = int(os.getenv("RECALL_CDP_PORT", "9338"))
     viewport_w: int = 1280
     viewport_h: int = 800
     headless: bool = _bool("RECALL_HEADLESS", True)

@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import GhostFibers from "@/components/reactbits/GhostFibers";
 import Lightfall from "@/components/reactbits/Lightfall";
-import LightPillar from "@/components/reactbits/LightPillar";
+import LightRays from "@/components/reactbits/LightRays";
 
 /** three.js star field: slow parallax drift of blue/white/orange dust. */
 function Starfield() {
@@ -76,72 +75,33 @@ function Starfield() {
   return <div ref={ref} className="absolute inset-0" aria-hidden="true" />;
 }
 
-type Variant = "fibers" | "lightfall" | "pillar";
-
 /**
- * Dreamscape backdrop built from React Bits backgrounds (Lightfall by default; ?bg=fibers or ?bg=pillar
- * to compare), a three.js star field, and a soft dark veil behind the headline so text always stays readable.
+ * Daylight dreamscape: pale sky gradient, React Bits light rays falling from the top, drifting
+ * cloud glows, a warm orange horizon accent and a faint star/dust field. ?bg=night keeps the old look.
  */
 export default function DreamBackground() {
-  const [variant, setVariant] = useState<Variant>("lightfall");
-  useEffect(() => {
-    const v = new URLSearchParams(window.location.search).get("bg");
-    if (v === "lightfall" || v === "pillar" || v === "fibers") setVariant(v);
-  }, []);
+  const [night, setNight] = useState(false);
+  useEffect(() => setNight(new URLSearchParams(window.location.search).get("bg") === "night"), []);
 
-  return (
+  if (night) return (
     <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#02070A]" aria-hidden="true">
       <div className="absolute inset-0 bg-[radial-gradient(90%_60%_at_50%_0%,#062d4d_0%,#03131f_45%,#02070A_78%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(70%_40%_at_50%_105%,rgba(252,115,77,.32)_0%,rgba(252,115,77,.08)_45%,transparent_75%)]" />
       <Starfield />
-      <div className="absolute inset-0">
-        {variant === "fibers" && (
-          <GhostFibers
-            glowColor="#0297DE"
-            secondaryColor="#FC734D"
-            lineColor="#cfeeff"
-            gradient="along"
-            speed={0.35}
-            rotation={14}
-            rollSpeed={0.1}
-            layers={3}
-            threads={96}
-            density={1.1}
-            thickness={1.5}
-            glow={1.2}
-            brightness={1.7}
-            depthOfField={0.7}
-            particles={0.6}
-            sparkle={0.4}
-            vignette={0.45}
-            grain={0.04}
-            mouseInteraction={false}
-            pulseOnClick={false}
-          />
-        )}
-        {variant === "lightfall" && (
-          <Lightfall
-            colors={["#0297DE", "#5fc4f2", "#FC734D", "#ffffff"]}
-            backgroundColor="#0297DE"
-            backgroundGlow={0.18}
-            speed={0.25}
-            streakCount={2}
-            density={0.55}
-            glow={0.8}
-            bloom={0.4}
-            opacity={0.85}
-            mouseInteraction={false}
-            holdToWarp={false}
-          />
-        )}
-        {variant === "pillar" && (
-          <LightPillar topColor="#0297DE" bottomColor="#FC734D" intensity={0.85} glowAmount={0.0016} pillarRotation={0}
-            quality="low" interactive={false} clickPulse={false} mixBlendMode="screen" />
-        )}
+      <div className="absolute inset-0"><Lightfall colors={["#0297DE", "#5fc4f2", "#FC734D", "#ffffff"]} backgroundColor="#0297DE" backgroundGlow={0.18} speed={0.25} streakCount={2} density={0.55} glow={0.8} bloom={0.4} opacity={0.85} mouseInteraction={false} holdToWarp={false} /></div>
+    </div>
+  );
+
+  return (
+    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,#bfe5fb_0%,#dcf1fd_38%,#f3faff_72%,#fff6f0_100%)]" />
+      <div className="dream-cloud absolute -left-[10%] top-[18%] h-[55vh] w-[55vw] rounded-full bg-[radial-gradient(closest-side,rgba(255,255,255,.95),rgba(255,255,255,0))]" />
+      <div className="dream-cloud absolute -right-[12%] top-[40%] h-[60vh] w-[60vw] rounded-full bg-[radial-gradient(closest-side,rgba(255,255,255,.85),rgba(255,255,255,0))] [animation-delay:-9s]" />
+      <div className="absolute inset-x-0 bottom-0 h-[45vh] bg-[radial-gradient(60%_80%_at_70%_110%,rgba(252,115,77,.28)_0%,rgba(252,115,77,.08)_45%,transparent_75%)]" />
+      <div className="absolute inset-0 opacity-80">
+        <LightRays raysOrigin="top-center" raysColor="#ffffff" raysSpeed={0.6} lightSpread={1.1} rayLength={1.6} fadeDistance={1.1}
+          saturation={0.9} followMouse={false} mouseInfluence={0} noiseAmount={0.04} distortion={0.04} />
       </div>
-      {/* readability veil behind the headline + edge vignette */}
-      <div className="absolute inset-0 bg-[radial-gradient(42%_26%_at_50%_16%,rgba(2,7,10,.72)_0%,rgba(2,7,10,.35)_55%,transparent_100%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_45%,transparent_50%,rgba(2,7,10,.85)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(130%_100%_at_50%_40%,transparent_55%,rgba(2,121,179,.12)_100%)]" />
     </div>
   );
 }

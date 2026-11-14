@@ -7,7 +7,7 @@ const sans = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
-  title: "RecallOS - Episodic Memory Browser",
+  title: "Referent — Your browser, with memory",
   description: "Episodic memory browser with an Obsidian graph and autonomous DOM replay",
 };
 

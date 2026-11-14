@@ -89,6 +89,11 @@ SNAPSHOT_JS = r"""
   }
   const sel = window.getSelection ? String(window.getSelection()) : '';
   return {url: location.href, title: document.title, context: ctx, entities: [...byName.values()],
+          focusSelector: (() => {
+            const els = [...document.querySelectorAll('section[id],article[id],h2[id],h3[id],[data-snapshot]')];
+            const el = els.find(e => { const r = e.getBoundingClientRect(); return r.top >= 40 && r.top < vh * .8; });
+            return el && window.__recallCssPath ? window.__recallCssPath(el) : 'body';
+          })(),
           visibleText: blocks.filter(Boolean).join('\n').slice(0, 2000), scrollY: Math.round(scrollY), selection: sel.slice(0, 300)};
 }
 """
@@ -127,7 +132,7 @@ HIGHLIGHT_JS = r"""
   const box = document.createElement('div'); box.className = '__recall_hl';
   Object.assign(box.style, {left: (er.left + scrollX - 8) + 'px', top: (er.top + scrollY - 8) + 'px', width: (er.width + 16) + 'px', height: (er.height + 16) + 'px'});
   document.body.appendChild(box);
-  const tag = document.createElement('div'); tag.className = '__recall_tag'; tag.textContent = 'RecallOS - ' + label;
+  const tag = document.createElement('div'); tag.className = '__recall_tag'; tag.textContent = 'Referent · ' + label;
   Object.assign(tag.style, {left: (er.left + scrollX - 8) + 'px', top: Math.max(0, er.top + scrollY - 40) + 'px'});
   document.body.appendChild(tag);
   const tr = mark ? mark.getBoundingClientRect() : er;
@@ -144,6 +149,7 @@ class BrowserAgent:
     def __init__(self, emit: Emit, emit_frame: EmitFrame):
         self.emit = emit
         self.emit_frame = emit_frame
+        self.native = settings.native
         self.pw: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -164,6 +170,8 @@ class BrowserAgent:
 
     # ---------------------------------------------------------------- lifecycle
     async def start(self) -> None:
+        if self.native:
+            return  # Electron attaches its actual on-screen page.
         try:
             self.pw = await async_playwright().start()
             self.browser = await self.pw.chromium.launch(headless=settings.headless)
@@ -185,7 +193,7 @@ class BrowserAgent:
     async def stop(self) -> None:
         for closer in (
             lambda: self.cdp.send("Page.stopScreencast") if self.cdp else None,
-            lambda: self.browser.close() if self.browser else None,
+            lambda: self.browser.close() if self.browser and not self.native else None,
             lambda: self.pw.stop() if self.pw else None,
         ):
             try:
@@ -196,16 +204,41 @@ class BrowserAgent:
                 pass
         self.ready = False
 
+    async def attach_native(self, endpoint: str, marker: str, native_id: int) -> None:
+        if not self.native:
+            raise ValueError("Restart the engine from the Referent desktop app to use native browsing")
+        if not self.pw:
+            self.pw = await async_playwright().start()
+        if not self.browser:
+            self.browser = await self.pw.chromium.connect_over_cdp(endpoint, no_defaults=True)
+        page = None
+        for _ in range(30):
+            page = next((p for c in self.browser.contexts for p in c.pages if p.url == marker), None)
+            if page:
+                break
+            await asyncio.sleep(.1)
+        if not page:
+            raise ValueError("Native browser tab did not appear in Chromium")
+        self.context = page.context
+        await self.context.add_cookies([{"name": COOKIE, "value": SESSION_VALUE, "url": settings.base_url}])
+        await page.expose_function("__recallRecord", self._on_record)
+        await page.add_init_script(RECORDER_JS)
+        await page.evaluate(RECORDER_JS)
+        self._register(page, native_id)
+        self.ready = True
+        self.error = None
+        await self.switch_tab(native_id)
+
     # -------------------------------------------------------------------- tabs
     def _tab_id(self, page: Page) -> int | None:
         return next((i for i, p in self.tabs.items() if p is page), None)
 
-    def _register(self, page: Page) -> int:
+    def _register(self, page: Page, native_id: int | None = None) -> int:
         tid = self._tab_id(page)
         if tid is not None:
             return tid
-        tid = self._next_id
-        self._next_id += 1
+        tid = native_id if native_id is not None else self._next_id
+        self._next_id = max(self._next_id + 1, tid + 1)
         self.tabs[tid] = page
         page.on("framenavigated", lambda frame, p=page: asyncio.create_task(self._on_nav(p, frame)))
         page.on("load", lambda _p=None: asyncio.create_task(self.emit_tabs()))
@@ -255,13 +288,22 @@ class BrowserAgent:
             self.cdp = None
             if self.tabs:
                 await self.switch_tab(list(self.tabs)[-1])
-            elif self.ready:
+            elif self.ready and not self.native:
                 await self.new_tab()
                 return
         await self.emit_tabs()
 
     async def switch_tab(self, tid: int) -> None:
         if tid not in self.tabs:
+            return
+        if self.native:
+            self.active_id = tid
+            self.page = self.tabs[tid]
+            self.session_actions = []
+            size = await self.page.evaluate("({w: innerWidth, h: innerHeight})")
+            self.vw, self.vh = size["w"], size["h"]
+            await self.emit({"type": "url", "url": self.page.url, "title": await self._safe_title(self.page)})
+            await self.emit_tabs()
             return
         async with self._switch_lock:
             if tid == self.active_id and self.cdp:
@@ -304,12 +346,14 @@ class BrowserAgent:
         cdp.on("Page.screencastFrame", on_frame)
         await cdp.send(
             "Page.startScreencast",
-            {"format": "jpeg", "quality": 80, "maxWidth": int(self.vw * settings.dpr), "maxHeight": int(self.vh * settings.dpr), "everyNthFrame": 1},
+            {"format": "png", "maxWidth": int(self.vw * settings.dpr), "maxHeight": int(self.vh * settings.dpr), "everyNthFrame": 1},
         )
 
     async def resize(self, w: float, h: float) -> None:
         """Match the remote viewport to the window the user actually sees."""
-        w = int(max(640, min(w, 2560)))
+        if self.native:
+            return
+        w = int(max(320, min(w, 3840)))
         h = int(max(400, min(h, 1600)))
         if (w, h) == (self.vw, self.vh) or not self.ready:
             return
@@ -324,7 +368,7 @@ class BrowserAgent:
                 await self.cdp.send("Page.stopScreencast")
                 await self.cdp.send(
                     "Page.startScreencast",
-                    {"format": "jpeg", "quality": 80, "maxWidth": int(w * settings.dpr), "maxHeight": int(h * settings.dpr), "everyNthFrame": 1},
+                    {"format": "png", "maxWidth": int(w * settings.dpr), "maxHeight": int(h * settings.dpr), "everyNthFrame": 1},
                 )
             except Exception:
                 pass
@@ -373,6 +417,7 @@ class BrowserAgent:
     # ------------------------------------------------------------------ public
     def status(self) -> dict[str, Any]:
         return {
+            "native": self.native,
             "ready": self.ready,
             "error": self.error,
             "url": self.page.url if self.page and self.ready else None,
@@ -550,7 +595,7 @@ class BrowserAgent:
         selects = [a for a in self.session_actions if a["type"] == "select" and a.get("page") == snap["url"]]
         clicks = [a for a in self.session_actions if a["type"] == "click" and a.get("page") == snap["url"]]
         focus = selects[-1] if selects else None
-        selector = focus["selector"] if focus else (clicks[-1]["selector"] if clicks else None)
+        selector = focus["selector"] if focus else snap.get("focusSelector") or (clicks[-1]["selector"] if clicks else "body")
         fragment = focus["text"] if focus else (snap.get("selection") or None)
         actions: list[dict[str, Any]] = [{"type": "goto", "url": snap["url"]}]
         if selector:

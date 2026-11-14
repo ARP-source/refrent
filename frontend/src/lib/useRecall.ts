@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { desktop } from "./desktop";
 import {
   API,
   WS_URL,
@@ -55,6 +56,14 @@ export function useRecall() {
   const [error, setError] = useState<string | null>(null);
   const [recorded, setRecorded] = useState(0);
   const [history, setHistory] = useState<{ query: string; title: string; score: number }[]>([]);
+  const [graphRun, setGraphRun] = useState(0);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
+  const [captureMessage, setCaptureMessage] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
+
+  useEffect(() => desktop()?.onEvent((msg) => {
+    if (msg.type === "browser_error") setError(msg.message || "Navigation failed");
+  }), []);
 
   const loadGraph = useCallback(async () => {
     try {
@@ -79,6 +88,7 @@ export function useRecall() {
       ws.onopen = () => {
         setConnected(true);
         loadGraph();
+        desktop()?.command({ type: "sync" });
       };
       ws.onclose = () => {
         setConnected(false);
@@ -104,6 +114,7 @@ export function useRecall() {
             setTitle(msg.title ?? "");
             setBBox(null);
             setChanges(null);
+            setSnapshotOpen(false);
             break;
           case "tabs":
             setTabs(msg.tabs ?? []);
@@ -121,6 +132,10 @@ export function useRecall() {
             setAgent(msg as AgentEvent);
             break;
           case "recall_start":
+            setResult(null);
+            setTelemetry(null);
+            setAgent(null);
+            setSnapshotOpen(false);
             setTrace([{ step: "start", title: "Recall query received", detail: `"${msg.query}"`, t_ms: 0 }]);
             setEnrichment(null);
             setBBox(null);
@@ -134,6 +149,7 @@ export function useRecall() {
             setTrace((t) => [...t, msg as TraceStep]);
             break;
           case "graph_scores":
+            setGraphRun((n) => n + 1);
             setScores(msg.scores ?? {});
             setNodeScores(msg.node_scores ?? {});
             setTopId(msg.top ?? null);
@@ -179,6 +195,8 @@ export function useRecall() {
   }, [loadGraph]);
 
   const send = useCallback((obj: unknown) => {
+    const bridge = desktop();
+    if (bridge) { bridge.command(obj).catch((e) => setError(String(e))); return; }
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }, []);
@@ -192,7 +210,7 @@ export function useRecall() {
         const r = await fetch(`${API}/api/recall`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ query, ...opts }),
+          body: JSON.stringify({ query, ...opts, graph_preview: true }),
         });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `HTTP ${r.status}`);
         const res = (await r.json()) as RecallResult;
@@ -210,7 +228,7 @@ export function useRecall() {
     [],
   );
 
-  const navigate = useCallback((url: string) => send({ type: "navigate", url }), [send]);
+  const navigate = useCallback((url: string) => { setError(null); send({ type: "navigate", url }); }, [send]);
   const newTab = useCallback((url?: string) => send({ type: "tab", action: "new", url }), [send]);
   const closeTab = useCallback((id: number) => send({ type: "tab", action: "close", id }), [send]);
   const switchTab = useCallback((id: number) => send({ type: "tab", action: "switch", id }), [send]);
@@ -239,14 +257,20 @@ export function useRecall() {
   );
 
   const capture = useCallback(async () => {
-    const r = await fetch(`${API}/api/episode/capture`, { method: "POST" });
-    if (!r.ok) {
-      setError((await r.json().catch(() => ({}))).detail ?? "capture failed");
+    setCapturing(true);
+    setCaptureMessage(null);
+    try {
+      const r = await fetch(`${API}/api/episode/capture`, { method: "POST" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? "Capture failed");
+      setRecorded(0);
+      setCaptureMessage("Snapshot saved to your vault. You can recall it now.");
+      await loadGraph();
+      return await r.json();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
       return null;
-    }
-    setRecorded(0);
-    return r.json();
-  }, []);
+    } finally { setCapturing(false); }
+  }, [loadGraph]);
 
   const replayNote = useCallback(async (id: string) => {
     const r = await fetch(`${API}/api/replay/${encodeURIComponent(id)}`, { method: "POST" });
@@ -259,5 +283,6 @@ export function useRecall() {
     graph, graphVersion, focusNote, setFocusNote, running, error, setError, recorded, history,
     tabs, viewport, navigate, newTab, closeTab, switchTab, resizeViewport,
     send, recall, choose, capture, replayNote, loadGraph,
+    graphRun, snapshotOpen, setSnapshotOpen, captureMessage, setCaptureMessage, capturing,
   };
 }

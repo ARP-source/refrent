@@ -16,7 +16,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Header
+import secrets
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -122,6 +123,7 @@ class RecallIn(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     replay: bool = True
     enrich: bool = True
+    graph_preview: bool = False
 
 
 class ChooseIn(BaseModel):
@@ -140,6 +142,42 @@ class NavigateIn(BaseModel):
 
 
 # ----------------------------------------------------------------------------- REST
+class NativeAttachIn(BaseModel):
+    id: int = Field(gt=0)
+    marker: str = Field(max_length=100)
+    endpoint: str = Field(max_length=100)
+
+
+class NativeSelectIn(BaseModel):
+    id: int = Field(gt=0)
+
+
+def check_native_key(key: str | None) -> None:
+    if not settings.native or not settings.native_key or not secrets.compare_digest(key or "", settings.native_key):
+        raise HTTPException(403, "Native browser bridge requires the desktop session key")
+
+
+@app.post("/api/browser/native/attach")
+async def api_native_attach(body: NativeAttachIn, x_referent_key: str | None = Header(default=None)):
+    check_native_key(x_referent_key)
+    if body.endpoint != f"http://127.0.0.1:{settings.cdp_port}" or body.marker != f"about:blank#referent-{body.id}":
+        raise HTTPException(400, "Unexpected browser target")
+    async with recall_lock:
+        await agent.attach_native(body.endpoint, body.marker, body.id)
+    await hub.emit({"type": "status", **status_payload()})
+    return {"ok": True}
+
+
+@app.post("/api/browser/native/select")
+async def api_native_select(body: NativeSelectIn, x_referent_key: str | None = Header(default=None)):
+    check_native_key(x_referent_key)
+    if body.id not in agent.tabs:
+        raise HTTPException(404, "Tab not found")
+    async with recall_lock:
+        await agent.switch_tab(body.id)
+    return {"ok": True}
+
+
 @app.get("/api/status")
 async def api_status():
     return status_payload()
@@ -227,7 +265,7 @@ async def api_recall(body: RecallIn):
     if recall_lock.locked():
         raise HTTPException(409, "a recall is already running")
     async with recall_lock:
-        return await run_recall(body.query.strip(), body.replay, body.enrich)
+        return await run_recall(body.query.strip(), body.replay, body.enrich, body.graph_preview)
 
 
 @app.post("/api/recall/choose")
@@ -323,7 +361,7 @@ class Run:
                         "t_ms": round((time.perf_counter() - self.t0) * 1000), **extra})
 
 
-async def run_recall(query: str, do_replay: bool, do_enrich: bool) -> dict[str, Any]:
+async def run_recall(query: str, do_replay: bool, do_enrich: bool, graph_preview: bool = False) -> dict[str, Any]:
     run = Run(uuid.uuid4().hex[:8])
     await hub.emit({"type": "recall_start", "rid": run.rid, "query": query})
 
@@ -430,6 +468,8 @@ async def run_recall(query: str, do_replay: bool, do_enrich: bool) -> dict[str, 
     await hub.emit({"type": "graph_scores", "rid": run.rid, "scores": search["all_scores"], "node_scores": search["node_scores"],
                     "seeds": search["ppr_seeds"], "top": r0["id"], "path": path, "ambiguous": [], "query_label": query,
                     "margin": round(margin, 4)})
+    if graph_preview and do_replay:
+        await asyncio.sleep(2.5)
     top = vault.get(r0["id"])
     restored = await restore(run, top, do_replay, do_enrich)
     telemetry = make_telemetry(run, search, resolved, restored.get("enrichment"), results)

@@ -3,12 +3,37 @@
 import { Bot, FileDiff, Globe } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { RecallState } from "@/lib/useRecall";
+import { desktop } from "@/lib/desktop";
+
+function NativeViewport() {
+  const host = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      desktop()?.bounds({ x: r.x, y: r.y, width: r.width, height: r.height });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    window.addEventListener("resize", measure);
+    measure();
+    return () => { observer.disconnect(); window.removeEventListener("resize", measure); desktop()?.bounds({ x: 0, y: 0, width: 0, height: 0 }); };
+  }, []);
+  return <div ref={host} className="h-full w-full bg-white" aria-label="Live native browser page" />;
+}
+
+export default function BrowserViewport({ s }: { s: RecallState }) {
+  const [native, setNative] = useState(false);
+  useEffect(() => setNative(!!desktop()), []);
+  return native ? <NativeViewport /> : <StreamViewport s={s} />;
+}
 
 /**
  * The live page. Fills its container; the remote Chromium viewport is resized to match, so the
  * page renders at the real window size (no letterboxing). Mouse, wheel and keys are forwarded.
  */
-export default function BrowserViewport({ s }: { s: RecallState }) {
+function StreamViewport({ s }: { s: RecallState }) {
   const host = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [hostSize, setHostSize] = useState({ w: 0, h: 0 });
@@ -83,7 +108,7 @@ export default function BrowserViewport({ s }: { s: RecallState }) {
   };
 
   return (
-    <div ref={host} className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[18px] bg-[#0b141c]">
+    <div ref={host} className="relative flex h-full w-full items-center justify-center overflow-hidden bg-white">
       <div
         ref={box}
         tabIndex={0}
@@ -103,7 +128,7 @@ export default function BrowserViewport({ s }: { s: RecallState }) {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={s.frame} alt="" draggable={false} className="absolute inset-0 h-full w-full" />
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-slate-500">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-sky-700/60">
             <Globe className="animate-pulse" />
             {s.status?.browser.error ? <span className="max-w-md text-center text-rose-400">{s.status.browser.error}</span> : s.connected ? "Starting browser..." : "Connecting..."}
           </div>
@@ -119,23 +144,23 @@ export default function BrowserViewport({ s }: { s: RecallState }) {
         )}
 
         {s.changes?.status === "changed" && (
-          <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[92%] -translate-x-1/2 flex-wrap items-center gap-2 rounded-2xl bg-[#06121b]/92 px-4 py-2.5 shadow-[0_20px_40px_-10px_rgba(0,0,0,.8),0_0_0_1px_rgba(255,255,255,.08)] backdrop-blur-xl">
-            <FileDiff size={15} className="text-orange-300" />
-            <span className="text-[13px] font-medium text-white">
-              Changed since you looked{s.changes.edited_by ? <span className="font-normal text-orange-200/80"> - {s.changes.edited_by}</span> : null}
+          <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[92%] -translate-x-1/2 flex-wrap items-center gap-2 glass-strong rounded-2xl px-4 py-2.5">
+            <FileDiff size={15} className="text-orange-500" />
+            <span className="text-[13px] font-medium text-sky-950">
+              Changed since you looked{s.changes.edited_by ? <span className="font-normal text-orange-600"> - {s.changes.edited_by}</span> : null}
             </span>
             {s.changes.changes?.slice(0, 5).map((c, i) => (
-              <span key={i} className="rounded-lg bg-white/[0.06] px-2 py-0.5 font-mono text-[12px]">
-                <span className="text-rose-300/80 line-through">{c.before || "-"}</span>
-                <span className="mx-1 text-slate-500">-&gt;</span>
-                <span className="text-emerald-300">{c.after || "-"}</span>
+              <span key={i} className="rounded-lg bg-white px-2 py-0.5 font-mono text-[12px] shadow-[inset_0_0_0_1px_rgba(252,115,77,.25)]">
+                <span className="text-rose-600 line-through">{c.before || "-"}</span>
+                <span className="mx-1 text-sky-900/40">-&gt;</span>
+                <span className="text-emerald-700">{c.after || "-"}</span>
               </span>
             ))}
           </div>
         )}
 
         {agentVisible && agentActive && (
-          <div className="pointer-events-none absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 rounded-full bg-[#06121b]/90 px-3.5 py-1.5 text-xs text-cyan-100 shadow-[0_0_0_1px_rgba(95,196,242,.3)] backdrop-blur-xl">
+          <div className="pointer-events-none absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 glass-strong rounded-full px-3.5 py-1.5 text-xs font-medium text-orange-600">
             <Bot size={13} className="animate-pulse" /> Taking you back...
           </div>
         )}

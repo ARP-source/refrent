@@ -1,8 +1,8 @@
 {
   "name": "recallos",
-  "productName": "RecallOS",
+  "productName": "Referent",
   "version": "1.0.0",
-  "description": "RecallOS - episodic memory browser with an Obsidian graph and autonomous DOM replay",
+  "description": "Referent \u2014 a native browser with episodic memory and verified recall",
   "author": "RecallOS",
   "main": "main.js",
   "recallRoot": "C:\\da browser\\recall-os",
@@ -13,7 +13,7 @@
   },
   "build": {
     "appId": "dev.recallos.app",
-    "productName": "RecallOS",
+    "productName": "Referent",
     "directories": {
       "output": "dist"
     },
@@ -21,7 +21,9 @@
       "main.js",
       "splash.html",
       "icon.png",
-      "package.json"
+      "package.json",
+      "preload.js",
+      "native-browser.js"
     ],
     "win": {
       "target": "nsis",
@@ -33,7 +35,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "RecallOS"
+      "shortcutName": "Referent"
     }
   },
   "devDependencies": {

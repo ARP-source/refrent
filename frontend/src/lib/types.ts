@@ -12,7 +12,7 @@ export type Keys ={ telem: boolean; tavily: boolean; openai: boolean; anthropic:
 
 export type Status = {
   keys: Keys;
-  browser: { ready: boolean; error: string | null; url: string | null; busy: boolean; buffer: number };
+  browser: { native?: boolean; ready: boolean; error: string | null; url: string | null; busy: boolean; buffer: number };
   vault: { notes: number; episodes: number; edges: number; dir: string };
   base_url: string;
 };
@@ -165,4 +165,4 @@ export type NoteDetail = {
   tags?: string[];
 };
 
-export type AgentEvent = { phase: string; label?: string; index?: number; total?: number; action?: { type: string; selector?: string; url?: string }; error?: string };
+export type AgentEvent = { phase: string; ok?: boolean; label?: string; index?: number; total?: number; action?: { type: string; selector?: string; url?: string }; error?: string };
