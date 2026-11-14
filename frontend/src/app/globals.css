@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+/* Dreamscape palette: Midnight Black #02070A, Electric Blue #0297DE, Cantaloupe Orange #FC734D.
+   Existing utility names (cyan / amber / orange / ink) are remapped so every component picks it up. */
+@theme {
+  --color-ink-950: #02070a;
+  --color-ink-900: #040d13;
+  --color-ink-850: #06121b;
+  --color-ink-800: #0a1824;
+  --color-ink-700: #12273a;
+  --color-ink-600: #1b3650;
+
+  --color-cyan-50: #e6f6fd;
+  --color-cyan-100: #c4eafb;
+  --color-cyan-200: #93d8f7;
+  --color-cyan-300: #5fc4f2;
+  --color-cyan-400: #2baeea;
+  --color-cyan-500: #0297de;
+  --color-cyan-600: #0279b3;
+  --color-cyan-700: #035f8c;
+  --color-cyan-800: #064c6f;
+  --color-cyan-900: #083f5b;
+  --color-cyan-950: #04283b;
+
+  --color-amber-100: #ffe8df;
+  --color-amber-200: #ffcdb9;
+  --color-amber-300: #fea98d;
+  --color-amber-400: #fd8b68;
+  --color-amber-500: #fc734d;
+  --color-orange-100: #ffe4dc;
+  --color-orange-200: #fec5b4;
+  --color-orange-300: #fd9d82;
+  --color-orange-400: #fc734d;
+  --color-orange-500: #f2552b;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-instrument), "Times New Roman", serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, Consolas, monospace;
+}
+
+html,
+body {
+  height: 100%;
+  color: #d6e3ee;
+  font-family: var(--font-sans);
+}
+/* colour lives on <html> only: a body background would paint over the negative-z dreamscape layer */
+html { background: #02070a; }
+body { background: transparent; }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1b3650 transparent;
+}
+
+/* Floating glass card (matches the reference's bottom cards): frosted, bright top rim, deep drop shadow */
+/* Borderless blue glass: no outlines, just frosted depth and a soft drop shadow */
+.panel {
+  position: relative;
+  background: linear-gradient(180deg, rgba(10, 40, 64, 0.42) 0%, rgba(4, 16, 26, 0.55) 55%, rgba(2, 9, 14, 0.62) 100%);
+  border-radius: 26px;
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  box-shadow:
+    0 40px 80px -30px rgba(0, 0, 0, 0.85),
+    0 0 80px -30px rgba(2, 151, 222, 0.3),
+    0 0 22px -6px rgba(255, 255, 255, 0.10); /* faint outer white halo */
+}
+/* soft white edge glow: a 1px light rim that is brightest on top and fades down the sides (no hard border) */
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.08) 22%, rgba(255, 255, 255, 0.04) 60%, rgba(255, 255, 255, 0.10) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.35));
+}
+
+/* desktop-app window dragging */
+.app-drag { -webkit-app-region: drag; }
+.app-nodrag, .app-drag button, .app-drag input, .app-drag a { -webkit-app-region: no-drag; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 16px;
+  border: 1px solid rgba(2, 151, 222, 0.22);
+  background: rgba(6, 18, 27, 0.7);
+  white-space: nowrap;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6f8ba3;
+}
+
+/* vertical light beams rising from the horizon (the "dreamscape" stripes) */
+.dream-beams {
+  background:
+    repeating-linear-gradient(90deg, rgba(95, 196, 242, 0) 0 9px, rgba(95, 196, 242, 0.09) 9px 10px, rgba(95, 196, 242, 0) 10px 23px),
+    repeating-linear-gradient(90deg, rgba(252, 115, 77, 0) 0 31px, rgba(252, 115, 77, 0.07) 31px 33px, rgba(252, 115, 77, 0) 33px 57px);
+  -webkit-mask-image: radial-gradient(70% 100% at 50% 100%, #000 0%, rgba(0, 0, 0, 0.45) 45%, transparent 80%);
+  mask-image: radial-gradient(70% 100% at 50% 100%, #000 0%, rgba(0, 0, 0, 0.45) 45%, transparent 80%);
+  animation: beamDrift 14s ease-in-out infinite alternate;
+}
+@keyframes beamDrift {
+  0% { transform: translateX(-12px); opacity: 0.85; }
+  100% { transform: translateX(12px); opacity: 1; }
+}
+
+.md h1 { font-family: var(--font-serif); font-size: 1.35rem; font-weight: 400; margin: 0 0 .5rem; color: #f1f7fb; }
+.md h2 { font-size: .95rem; font-weight: 600; margin: .8rem 0 .4rem; color: #e2edf5; }
+.md p { margin: .45rem 0; line-height: 1.6; }
+.md blockquote { border-left: 3px solid #fc734d; background: rgba(252, 115, 77, .07); padding: .4rem .7rem; margin: .6rem 0; border-radius: 0 8px 8px 0; color: #e6d6cf; font-family: var(--font-serif); font-style: italic; font-size: 1.02rem; }
+.md ul { list-style: disc; padding-left: 1.2rem; }
+.md code { font-family: var(--font-mono); font-size: .8em; background: var(--color-ink-800); padding: 1px 4px; border-radius: 4px; }
+
+@keyframes cursorPing {
+  0% { transform: scale(.6); opacity: .9; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.cursor-ping { animation: cursorPing .7s ease-out; }
+
+@keyframes scan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.scanbar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(2, 151, 222, .8), rgba(252, 115, 77, .8), transparent);
+  animation: scan 1.2s linear infinite;
+}
+
+/* glowing "orb" button, like the Try-now orb in the reference */
+.orb {
+  background: radial-gradient(circle at 50% 35%, #ffd9cc 0%, #fc734d 38%, #c2410c 70%, #7c2d12 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .25) inset, 0 0 22px rgba(252, 115, 77, .65), 0 0 60px rgba(2, 151, 222, .25);
+}

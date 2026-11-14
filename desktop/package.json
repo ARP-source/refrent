@@ -1,0 +1,43 @@
+{
+  "name": "recallos",
+  "productName": "RecallOS",
+  "version": "1.0.0",
+  "description": "RecallOS - episodic memory browser with an Obsidian graph and autonomous DOM replay",
+  "author": "RecallOS",
+  "main": "main.js",
+  "recallRoot": "C:\\da browser\\recall-os",
+  "scripts": {
+    "icon": "python make_icon.py",
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "dev.recallos.app",
+    "productName": "RecallOS",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "splash.html",
+      "icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RecallOS"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0"
+  }
+}
