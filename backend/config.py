@@ -44,6 +44,7 @@ class Settings:
     viewport_w: int = 1280
     viewport_h: int = 800
     headless: bool = _bool("RECALL_HEADLESS", True)
+    dpr: float = float(os.getenv("RECALL_DPR", "1.5"))  # render scale of the remote page, for crisp text
 
     @property
     def base_url(self) -> str:

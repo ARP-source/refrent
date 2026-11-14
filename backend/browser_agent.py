@@ -27,6 +27,7 @@ Emit = Callable[[dict[str, Any]], Awaitable[None]]
 EmitFrame = Callable[[bytes], Awaitable[None]]
 
 START_PATH = "/portals/canvas/courses/cs229/announcements"
+HOME_PATH = "/portals/canvas/"  # new-tab page
 ALLOWED_KEYS = re.compile(r"^(?:[A-Za-z0-9]|Enter|Backspace|Tab|Escape|Delete|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Home|End|PageUp|PageDown|Space|Shift|Control|Alt|Meta|F5|[ -~])$")
 
 RECORDER_JS = r"""
@@ -51,7 +52,6 @@ RECORDER_JS = r"""
   const anchorOf = (el) => { const a = el.closest('[id]'); return a ? '#' + CSS.escape(a.id) : cssPath(el); };
   const send = (o) => { try { window.__recallRecord && window.__recallRecord(JSON.stringify(o)); } catch (e) {} };
   document.addEventListener('click', (e) => {
-    const a = e.target.closest && e.target.closest('a[target]'); if (a) a.target = '_self';
     const t = (e.target.closest && e.target.closest('a,button,[id]')) || e.target;
     send({type: 'click', selector: cssPath(t), text: (t.innerText || '').trim().slice(0, 80)});
   }, true);
@@ -147,11 +147,16 @@ class BrowserAgent:
         self.pw: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
-        self.page: Page | None = None
-        self.cdp: CDPSession | None = None
+        self.page: Page | None = None  # the active tab
+        self.cdp: CDPSession | None = None  # screencast session of the active tab
+        self.tabs: dict[int, Page] = {}
+        self.active_id: int | None = None
+        self._next_id = 1
+        self._switch_lock = asyncio.Lock()
+        self.vw, self.vh = settings.viewport_w, settings.viewport_h
         self.ready = False
         self.error: str | None = None
-        self.cursor = (settings.viewport_w / 2, settings.viewport_h / 2)
+        self.cursor = (self.vw / 2, self.vh / 2)
         self.recording = True
         self.session_actions: list[dict[str, Any]] = []
         self.lock = asyncio.Lock()
@@ -163,21 +168,14 @@ class BrowserAgent:
             self.pw = await async_playwright().start()
             self.browser = await self.pw.chromium.launch(headless=settings.headless)
             self.context = await self.browser.new_context(
-                viewport={"width": settings.viewport_w, "height": settings.viewport_h}, device_scale_factor=1
+                viewport={"width": self.vw, "height": self.vh}, device_scale_factor=settings.dpr
             )
             await self.context.add_cookies([{"name": COOKIE, "value": SESSION_VALUE, "url": settings.base_url}])
             await self.context.add_init_script(RECORDER_JS)
-            self.page = await self.context.new_page()
-            await self.page.expose_function("__recallRecord", self._on_record)
-            self.page.on("framenavigated", self._on_nav)
-            self.context.on("page", self._on_popup)
-            self.cdp = await self.context.new_cdp_session(self.page)
-            self.cdp.on("Page.screencastFrame", self._on_frame)
-            await self.cdp.send(
-                "Page.startScreencast",
-                {"format": "jpeg", "quality": 70, "maxWidth": settings.viewport_w, "maxHeight": settings.viewport_h, "everyNthFrame": 1},
-            )
-            await self.page.goto(settings.base_url + START_PATH, wait_until="domcontentloaded")
+            await self.context.expose_function("__recallRecord", self._on_record)
+            # target=_blank links and window.open() become real tabs
+            self.context.on("page", lambda p: asyncio.create_task(self._adopt(p)))
+            await self.new_tab(settings.base_url + START_PATH)
             self.ready = True
             self.error = None
         except Exception as exc:
@@ -198,37 +196,158 @@ class BrowserAgent:
                 pass
         self.ready = False
 
-    # ------------------------------------------------------------------ events
-    async def _on_frame(self, params: dict[str, Any]) -> None:
-        try:
-            await self.cdp.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
-        except Exception:
-            return
-        data = base64.b64decode(params["data"])
-        self.last_frame = data
-        await self.emit_frame(data)
+    # -------------------------------------------------------------------- tabs
+    def _tab_id(self, page: Page) -> int | None:
+        return next((i for i, p in self.tabs.items() if p is page), None)
 
-    async def _on_nav(self, frame) -> None:
-        if not self.page or frame != self.page.main_frame:
+    def _register(self, page: Page) -> int:
+        tid = self._tab_id(page)
+        if tid is not None:
+            return tid
+        tid = self._next_id
+        self._next_id += 1
+        self.tabs[tid] = page
+        page.on("framenavigated", lambda frame, p=page: asyncio.create_task(self._on_nav(p, frame)))
+        page.on("load", lambda _p=None: asyncio.create_task(self.emit_tabs()))
+        page.on("close", lambda p=page: asyncio.create_task(self._on_tab_closed(p)))
+        return tid
+
+    async def _adopt(self, page: Page) -> None:
+        tid = self._register(page)
+        await self.switch_tab(tid)
+
+    async def tab_list(self) -> list[dict[str, Any]]:
+        out = []
+        for tid, p in self.tabs.items():
+            try:
+                title = await p.title()
+            except Exception:
+                title = ""
+            out.append({"id": tid, "title": title or p.url or "New tab", "url": p.url, "active": tid == self.active_id})
+        return out
+
+    async def emit_tabs(self) -> None:
+        await self.emit({"type": "tabs", "tabs": await self.tab_list()})
+
+    async def new_tab(self, url: str | None = None) -> int:
+        page = await self.context.new_page()
+        tid = self._register(page)
+        await self.switch_tab(tid)
+        try:
+            await page.goto(self._abs(url) if url else settings.base_url + HOME_PATH, wait_until="domcontentloaded", timeout=20000)
+        except Exception as exc:
+            await self.emit({"type": "browser_error", "message": str(exc)[:200]})
+        return tid
+
+    async def close_tab(self, tid: int) -> None:
+        page = self.tabs.get(tid)
+        if page:
+            await page.close()  # _on_tab_closed does the bookkeeping
+
+    async def _on_tab_closed(self, page: Page) -> None:
+        tid = self._tab_id(page)
+        if tid is None:
+            return
+        del self.tabs[tid]
+        if tid == self.active_id:
+            self.active_id = None
+            self.page = None
+            self.cdp = None
+            if self.tabs:
+                await self.switch_tab(list(self.tabs)[-1])
+            elif self.ready:
+                await self.new_tab()
+                return
+        await self.emit_tabs()
+
+    async def switch_tab(self, tid: int) -> None:
+        if tid not in self.tabs:
+            return
+        async with self._switch_lock:
+            if tid == self.active_id and self.cdp:
+                await self.emit_tabs()
+                return
+            old = self.cdp
+            self.cdp = None
+            if old:
+                try:
+                    await old.send("Page.stopScreencast")
+                    await old.detach()
+                except Exception:
+                    pass
+            self.active_id = tid
+            self.page = self.tabs[tid]
+            try:
+                await self.page.set_viewport_size({"width": self.vw, "height": self.vh})
+                await self.page.bring_to_front()
+            except Exception:
+                pass
+            await self._start_screencast()
+        await self.emit({"type": "url", "url": self.page.url, "title": await self._safe_title(self.page)})
+        await self.emit_tabs()
+
+    async def _start_screencast(self) -> None:
+        cdp = await self.context.new_cdp_session(self.page)
+        self.cdp = cdp
+
+        async def on_frame(params: dict[str, Any]) -> None:
+            try:
+                await cdp.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
+            except Exception:
+                return
+            if cdp is not self.cdp:  # a frame from a tab that is no longer active
+                return
+            data = base64.b64decode(params["data"])
+            self.last_frame = data
+            await self.emit_frame(data)
+
+        cdp.on("Page.screencastFrame", on_frame)
+        await cdp.send(
+            "Page.startScreencast",
+            {"format": "jpeg", "quality": 80, "maxWidth": int(self.vw * settings.dpr), "maxHeight": int(self.vh * settings.dpr), "everyNthFrame": 1},
+        )
+
+    async def resize(self, w: float, h: float) -> None:
+        """Match the remote viewport to the window the user actually sees."""
+        w = int(max(640, min(w, 2560)))
+        h = int(max(400, min(h, 1600)))
+        if (w, h) == (self.vw, self.vh) or not self.ready:
+            return
+        self.vw, self.vh = w, h
+        for p in list(self.tabs.values()):
+            try:
+                await p.set_viewport_size({"width": w, "height": h})
+            except Exception:
+                pass
+        if self.cdp:
+            try:
+                await self.cdp.send("Page.stopScreencast")
+                await self.cdp.send(
+                    "Page.startScreencast",
+                    {"format": "jpeg", "quality": 80, "maxWidth": int(w * settings.dpr), "maxHeight": int(h * settings.dpr), "everyNthFrame": 1},
+                )
+            except Exception:
+                pass
+        await self.emit({"type": "viewport", "w": w, "h": h})
+
+    @staticmethod
+    async def _safe_title(page: Page) -> str:
+        try:
+            return await page.title()
+        except Exception:
+            return ""
+
+    # ------------------------------------------------------------------ events
+    async def _on_nav(self, page: Page, frame) -> None:
+        if frame != page.main_frame:
+            return
+        await self.emit_tabs()
+        if page is not self.page:
             return
         url = frame.url
-        try:
-            title = await self.page.title()
-        except Exception:
-            title = ""
-        await self.emit({"type": "url", "url": url, "title": title})
+        await self.emit({"type": "url", "url": url, "title": await self._safe_title(page)})
         if self.recording and not self.lock.locked() and url.startswith("http"):
             self._record({"type": "goto", "url": url})
-
-    async def _on_popup(self, popup: Page) -> None:
-        """Keep everything in one tab: open popups in the main page instead."""
-        try:
-            url = popup.url
-            await popup.close()
-            if url and url.startswith("http") and self.page:
-                await self.page.goto(url, wait_until="domcontentloaded")
-        except Exception:
-            pass
 
     async def _on_record(self, payload: str) -> None:
         if not self.recording or self.lock.locked():
@@ -259,7 +378,7 @@ class BrowserAgent:
             "url": self.page.url if self.page and self.ready else None,
             "busy": self.lock.locked(),
             "buffer": len(self.session_actions),
-            "viewport": {"w": settings.viewport_w, "h": settings.viewport_h},
+            "viewport": {"w": self.vw, "h": self.vh},
         }
 
     async def snapshot(self) -> dict[str, Any]:
@@ -300,8 +419,8 @@ class BrowserAgent:
         if not self.ready or not self.page or self.lock.locked():
             return
         kind = msg.get("kind")
-        x = max(0.0, min(float(msg.get("x", 0)), settings.viewport_w))
-        y = max(0.0, min(float(msg.get("y", 0)), settings.viewport_h))
+        x = max(0.0, min(float(msg.get("x", 0)), self.vw))
+        y = max(0.0, min(float(msg.get("y", 0)), self.vh))
         m = self.page.mouse
         try:
             if kind == "move":
@@ -458,7 +577,7 @@ class BrowserAgent:
             "text_fragment": fragment,
             "people": people,
             "entities": entities,
-            "session": {"viewport": f"{settings.viewport_w}x{settings.viewport_h}", "scroll_y": snap.get("scrollY", 0),
+            "session": {"viewport": f"{self.vw}x{self.vh}", "scroll_y": snap.get("scrollY", 0),
                         "recorded_actions": len(self.session_actions)},
             "actions": actions,
             "raw_actions": self.session_actions[-30:],

@@ -1,5 +1,11 @@
 # RecallOS - Episodic Memory Browser
 
+**It is a browser.** Tabs, back/forward/reload and one omnibox: type a URL to go there, or type a memory
+("the Kalman study guide from two weeks ago right before Prof. Rostova's office hours") to recall it.
+Two side panels are summoned from the top bar: **Recall** (the answer, what changed, what's new) and
+**Vault** (the memory graph). Shortcuts: Ctrl+L/Ctrl+K omnibox, Ctrl+T new tab, Ctrl+W close tab,
+Ctrl+J Recall panel, Ctrl+B Vault.
+
 Ask for things the way you remember them - *"the Kalman study guide from two weeks ago right before
 Prof. Rostova's office hours"* - and RecallOS finds the exact file, drives a real Chromium to it,
 highlights the exact sentence, tells you what changed since you last looked, and checks the web for

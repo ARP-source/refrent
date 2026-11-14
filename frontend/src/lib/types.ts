@@ -6,7 +6,9 @@ export const WS_URL = API.replace(/^http/, "ws") + "/ws";
 export const VIEW_W = 1280;
 export const VIEW_H = 800;
 
-export type Keys = { telem: boolean; tavily: boolean; openai: boolean; anthropic: boolean };
+export type Tab = { id: number; title: string; url: string; active: boolean };
+
+export type Keys ={ telem: boolean; tavily: boolean; openai: boolean; anthropic: boolean };
 
 export type Status = {
   keys: Keys;

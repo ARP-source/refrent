@@ -13,7 +13,10 @@ import {
   type GraphData,
   type RecallResult,
   type Status,
+  type Tab,
   type Telemetry,
+  VIEW_H,
+  VIEW_W,
   type TraceStep,
 } from "./types";
 
@@ -43,6 +46,8 @@ export function useRecall() {
   const [ambiguity, setAmbiguity] = useState<{ rid: string; margin: number; threshold: number; candidates: Candidate[] } | null>(null);
   const [changes, setChanges] = useState<Changes | null>(null);
   const [lastOpts, setLastOpts] = useState({ replay: true, enrich: true });
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [viewport, setViewport] = useState({ w: VIEW_W, h: VIEW_H });
   const [graph, setGraph] = useState<GraphData>({ nodes: [], links: [] });
   const [graphVersion, setGraphVersion] = useState(0);
   const [focusNote, setFocusNote] = useState<string | null>(null);
@@ -99,6 +104,12 @@ export function useRecall() {
             setTitle(msg.title ?? "");
             setBBox(null);
             setChanges(null);
+            break;
+          case "tabs":
+            setTabs(msg.tabs ?? []);
+            break;
+          case "viewport":
+            setViewport({ w: msg.w, h: msg.h });
             break;
           case "cursor":
             setCursor({ x: msg.x, y: msg.y, click: msg.click });
@@ -199,6 +210,12 @@ export function useRecall() {
     [],
   );
 
+  const navigate = useCallback((url: string) => send({ type: "navigate", url }), [send]);
+  const newTab = useCallback((url?: string) => send({ type: "tab", action: "new", url }), [send]);
+  const closeTab = useCallback((id: number) => send({ type: "tab", action: "close", id }), [send]);
+  const switchTab = useCallback((id: number) => send({ type: "tab", action: "switch", id }), [send]);
+  const resizeViewport = useCallback((w: number, h: number) => send({ type: "resize", w, h }), [send]);
+
   const choose = useCallback(
     async (rid: string, id: string) => {
       setRunning(true);
@@ -240,6 +257,7 @@ export function useRecall() {
     connected, status, frame, url, title, cursor, bbox, agent, trace, telemetry, enrichment, result,
     scores, nodeScores, topId, path, ambiguousIds, queryLabel, ambiguity, changes,
     graph, graphVersion, focusNote, setFocusNote, running, error, setError, recorded, history,
+    tabs, viewport, navigate, newTab, closeTab, switchTab, resizeViewport,
     send, recall, choose, capture, replayNote, loadGraph,
   };
 }

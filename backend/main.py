@@ -566,6 +566,8 @@ async def ws_endpoint(ws: WebSocket):
         client.push_frame(agent.last_frame)
     if agent.page and agent.ready:
         client.push(json.dumps({"type": "url", "url": agent.page.url, "title": await agent.page.title()}))
+        client.push(json.dumps({"type": "tabs", "tabs": await agent.tab_list()}))
+        client.push(json.dumps({"type": "viewport", "w": agent.vw, "h": agent.vh}))
     try:
         while True:
             msg = json.loads(await ws.receive_text())
@@ -577,6 +579,20 @@ async def ws_endpoint(ws: WebSocket):
                     await agent.navigate(str(msg.get("url", "")))
                 except ValueError as exc:
                     client.push(json.dumps({"type": "browser_error", "message": str(exc)}))
+            elif kind == "tab":
+                action = msg.get("action")
+                if action == "new":
+                    url = msg.get("url")
+                    asyncio.create_task(agent.new_tab(str(url) if url else None))
+                elif action == "close" and isinstance(msg.get("id"), int):
+                    await agent.close_tab(msg["id"])
+                elif action == "switch" and isinstance(msg.get("id"), int):
+                    await agent.switch_tab(msg["id"])
+            elif kind == "resize":
+                try:
+                    await agent.resize(float(msg.get("w", 0)), float(msg.get("h", 0)))
+                except (TypeError, ValueError):
+                    pass
             elif kind == "ping":
                 client.push(json.dumps({"type": "pong"}))
     except (WebSocketDisconnect, RuntimeError, json.JSONDecodeError):

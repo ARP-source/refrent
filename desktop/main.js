@@ -129,7 +129,7 @@ function createWindow() {
   }
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (!SMOKE && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {

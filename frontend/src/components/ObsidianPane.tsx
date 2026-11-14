@@ -229,6 +229,8 @@ export default function ObsidianPane({ s }: { s: RecallState }) {
   // glowing orbs: additive halo + bright core, gentle twinkle, distractors fade away
   const drawNode = useCallback(
     (node: GNode, ctx: CanvasRenderingContext2D, scale: number) => {
+      // the very first frame after (re)mounting can run before the simulation has placed a node
+      if (!Number.isFinite(node.x) || !Number.isFinite(node.y) || !Number.isFinite(scale)) return;
       const t = performance.now() / 1000;
       const ns = s.nodeScores[node.id];
       const isQuery = node.id === QUERY_ID;
@@ -245,6 +247,7 @@ export default function ObsidianPane({ s }: { s: RecallState }) {
       if (isTop || isTie) r += 2.2;
       if (isQuery) r = 4.2;
       r *= 1 + 0.07 * Math.sin(t * 1.4 + hash(node.id) * 6.28);
+      if (!Number.isFinite(r) || r <= 0) r = 2;
 
       const dim = active && !inPath && !isTie;
       const a = dim ? 0.13 : 1;

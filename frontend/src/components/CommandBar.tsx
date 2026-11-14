@@ -28,7 +28,7 @@ export default function AnswerPanel({ s }: { s: RecallState }) {
   if (res?.resolved.anchor_phrase) hints.push(`${res.resolved.anchor_rel} ${res.resolved.anchor_phrase}`);
 
   return (
-    <section className="panel flex min-h-0 flex-col overflow-hidden">
+    <section className="panel flex h-full min-h-0 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {s.error && <div className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{s.error}</div>}
 
