@@ -110,9 +110,9 @@ function createWindow() {
     minHeight: 760,
     show: false,
     title: "Referent",
-    backgroundColor: "#02070A",
+    backgroundColor: "#dff1fd",
     icon: path.join(__dirname, "icon.png"),
-    titleBarStyle: "hidden",
+    // frameless, no native caption buttons: the app draws its own min/max/close in the sky-glass toolbar
     frame: false,
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, preload: path.join(__dirname, "preload.js") },
   });

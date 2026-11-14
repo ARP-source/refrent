@@ -49,6 +49,24 @@ export default function Home() {
   }, []);
   const focusOmnibox = useCallback((recall = false) => { reveal(); chrome.current?.focusOmnibox(recall); }, [reveal]);
 
+  // Desktop app: the main process reports the cursor's y (the native page view hides it from the DOM).
+  const chromeBox = useRef<HTMLDivElement>(null);
+  const hoverRef = useRef(false);
+  hoverRef.current = hover;
+  useEffect(() => desktop()?.onEvent((msg) => {
+    if (msg.type !== "pointer" || typeof msg.y !== "number") return;
+    if (msg.y >= 0 && msg.y <= 10) {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      setHover(true);
+      return;
+    }
+    const bottom = chromeBox.current?.getBoundingClientRect().bottom ?? 0;
+    if (hoverRef.current && (msg.y < 0 || msg.y > bottom + 16)) {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      hideTimer.current = setTimeout(() => setHover(false), 600);
+    } else if (hoverRef.current && hideTimer.current) clearTimeout(hideTimer.current);
+  }), []);
+
   const toggle = useCallback((p: keyof Panels) => {
     if (choreography.current) clearTimeout(choreography.current);
     setPanels((v) => ({ recall: p === "recall" && !v.recall, vault: p === "vault" && !v.vault }));
@@ -114,7 +132,7 @@ export default function Home() {
   return (
     <main className="relative flex h-screen flex-col overflow-hidden">
       <DreamBackground />
-      <div onMouseEnter={enterChrome} onMouseLeave={leaveChrome} className="relative z-30 shrink-0">
+      <div ref={chromeBox} onMouseEnter={enterChrome} onMouseLeave={leaveChrome} className="relative z-30 shrink-0">
         <div className="chrome-wrap" data-hidden={!chromeVisible}>
           <div>
             <BrowserChrome ref={chrome} s={s} panels={panels} toggle={toggle} closePanels={closePanels} electron={electron}
@@ -122,7 +140,7 @@ export default function Home() {
               onRecall={() => { setChoiceReady(false); setPanels({ vault: true, recall: false }); }} />
           </div>
         </div>
-        {!chromeVisible && <button aria-label="Show toolbar" title="Show toolbar (Ctrl+L)" onClick={() => reveal(4000)} className="reveal-strip block w-full" />}
+        {!chromeVisible && <button aria-label="Show toolbar" title="Show toolbar (Ctrl+L)" onClick={() => reveal(4000)} className="group block h-3 w-full"><span className="reveal-strip block group-hover:opacity-100" /></button>}
       </div>
       {s.error && <div role="alert" className="glass mx-2 mt-2 flex items-center gap-3 rounded-xl px-4 py-2 text-sm text-rose-700"><span className="flex-1">{s.error}</span><button onClick={() => s.setError(null)} aria-label="Dismiss error"><X size={16} /></button></div>}
       {s.captureMessage && <div role="status" className="glass mx-2 mt-2 flex items-center gap-3 rounded-xl px-4 py-2 text-sm text-emerald-800"><span className="flex-1">{s.captureMessage}</span><button onClick={() => { setPanels({ vault: true, recall: false }); s.setCaptureMessage(null); }} className="font-medium text-orange-600 underline">Show in vault</button><button onClick={() => s.setCaptureMessage(null)} aria-label="Dismiss capture confirmation"><X size={16} /></button></div>}

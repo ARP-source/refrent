@@ -1,4 +1,4 @@
-const { WebContentsView, ipcMain, Menu, clipboard } = require("electron");
+const { WebContentsView, ipcMain, Menu, clipboard, screen } = require("electron");
 
 // Pages render as native Chromium surfaces. The shell preload is never exposed to web pages.
 module.exports = function installNativeBrowser(win, { base, token, cdp }) {
@@ -136,6 +136,21 @@ module.exports = function installNativeBrowser(win, { base, token, cdp }) {
     if (action === "maximize") win.isMaximized() ? win.unmaximize() : win.maximize();
     if (action === "close") win.close();
   });
+  // The native page view swallows mouse events and Windows reserves the top pixels of a frameless window
+  // for resizing, so the renderer cannot see the cursor reach the top edge. Poll it here instead.
+  let lastPointerY = null;
+  const pointerTimer = setInterval(() => {
+    if (win.isDestroyed() || !win.isVisible() || win.isMinimized()) return;
+    const p = screen.getCursorScreenPoint();
+    const b = win.getContentBounds();
+    const inside = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y - 2 && p.y < b.y + b.height;
+    const y = inside ? Math.max(0, p.y - b.y) : -1;
+    if (y === lastPointerY) return;
+    const near = (v) => v !== null && v >= 0 && v < 320;
+    if (near(y) || near(lastPointerY) || (y === -1) !== (lastPointerY === -1)) notify({ type: "pointer", y });
+    lastPointerY = y;
+  }, 60);
+  win.on("closed", () => clearInterval(pointerTimer));
   win.on("resize", layout);
   for (const name of ["maximize", "unmaximize"]) win.on(name, () => notify({ type: "window", maximized: win.isMaximized() }));
   win.on("close", () => {
