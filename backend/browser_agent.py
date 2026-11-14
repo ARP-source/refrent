@@ -26,8 +26,8 @@ from mock_portals import COOKIE, SESSION_VALUE
 Emit = Callable[[dict[str, Any]], Awaitable[None]]
 EmitFrame = Callable[[bytes], Awaitable[None]]
 
-START_PATH = "/portals/canvas/courses/cs229/announcements"
-HOME_PATH = "/portals/canvas/"  # new-tab page
+START_PATH = "/home"
+HOME_PATH = "/home"  # new-tab page (backend/home_page.py)
 ALLOWED_KEYS = re.compile(r"^(?:[A-Za-z0-9]|Enter|Backspace|Tab|Escape|Delete|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Home|End|PageUp|PageDown|Space|Shift|Control|Alt|Meta|F5|[ -~])$")
 
 RECORDER_JS = r"""

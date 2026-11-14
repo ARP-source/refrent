@@ -97,7 +97,7 @@ export default function DreamBackground() {
       <div className="dream-cloud absolute -left-[10%] top-[18%] h-[55vh] w-[55vw] rounded-full bg-[radial-gradient(closest-side,rgba(255,255,255,.95),rgba(255,255,255,0))]" />
       <div className="dream-cloud absolute -right-[12%] top-[40%] h-[60vh] w-[60vw] rounded-full bg-[radial-gradient(closest-side,rgba(255,255,255,.85),rgba(255,255,255,0))] [animation-delay:-9s]" />
       <div className="absolute inset-x-0 bottom-0 h-[45vh] bg-[radial-gradient(60%_80%_at_70%_110%,rgba(252,115,77,.28)_0%,rgba(252,115,77,.08)_45%,transparent_75%)]" />
-      <div className="absolute inset-0 opacity-80">
+      <div className="absolute inset-0 opacity-80 mix-blend-screen">
         <LightRays raysOrigin="top-center" raysColor="#ffffff" raysSpeed={0.6} lightSpread={1.1} rayLength={1.6} fadeDistance={1.1}
           saturation={0.9} followMouse={false} mouseInfluence={0} noiseAmount={0.04} distortion={0.04} />
       </div>

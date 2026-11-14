@@ -20,7 +20,9 @@ export function looksLikeUrl(raw: string) {
   if (!s || /\s/.test(s)) return false;
   return /^(https?:\/\/|localhost(:\d+)?|127\.\d+\.\d+\.\d+|\/)/i.test(s) || /^[\w-]+(\.[\w-]+)+(:\d+)?([/?#]\S*)?$/i.test(s);
 }
-const iconStyle = "grid h-8 w-8 shrink-0 place-items-center rounded-xl text-sky-900/70 transition hover:bg-white/80 hover:text-sky-950 disabled:opacity-35";
+/** The engine's new-tab page (backend/home_page.py): keep the address bar empty, like a real browser. */
+export const isHomeUrl = (url: string) => /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/home\/?(\?.*)?$/i.test(url || "");
+const iconStyle ="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-sky-900/70 transition hover:bg-white/80 hover:text-sky-950 disabled:opacity-35";
 const seg = (on: boolean) => `flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium transition ${on ? "bg-white text-sky-950 shadow-[0_2px_10px_-4px_rgba(2,121,179,.5)]" : "text-sky-900/70 hover:bg-white/60 hover:text-sky-950"}`;
 
 type Props = {
@@ -35,13 +37,14 @@ export default forwardRef<ChromeHandle, Props>(
     const [focused, setFocused] = useState(false);
     const [mode, setMode] = useState<"web" | "recall">("web");
     const [maximized, setMaximized] = useState(false);
-    useEffect(() => { if (!focused && mode === "web") setText(s.url); }, [s.url, focused, mode]);
+    const shownUrl = isHomeUrl(s.url) ? "" : s.url;
+    useEffect(() => { if (!focused && mode === "web") setText(shownUrl); }, [shownUrl, focused, mode]);
     useEffect(() => onFocusChange(focused), [focused, onFocusChange]);
     useEffect(() => desktop()?.onEvent((message) => {
       if (message.type === "window") setMaximized(!!message.maximized);
     }), []);
     useImperativeHandle(ref, () => ({ focusOmnibox: (recall = false) => {
-      setMode(recall ? "recall" : "web"); setText(recall ? "" : s.url);
+      setMode(recall ? "recall" : "web"); setText(recall ? "" : shownUrl);
       // the chrome may be sliding in; focus once it is laid out
       requestAnimationFrame(() => { input.current?.focus(); input.current?.select(); });
     } }));

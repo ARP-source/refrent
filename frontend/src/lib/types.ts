@@ -166,3 +166,21 @@ export type NoteDetail = {
 };
 
 export type AgentEvent = { phase: string; ok?: boolean; label?: string; index?: number; total?: number; action?: { type: string; selector?: string; url?: string }; error?: string };
+
+export type TelemCitation = { id: string; url: string; title: string; text: string; cached?: boolean };
+export type TelemMonitor = {
+  id: string; query: string; status: string; frequency?: string; created_at?: string | null; expires_at?: string | null;
+  last_polled_at?: string | null; agent_status?: string; agent_note?: string | null; note_id: string; topic?: string;
+};
+export type TelemRun = {
+  rid: string; note_id: string; note_title: string; host: string; configured: boolean; stage: "search" | "fetch" | "done";
+  since: string | null; fallback: boolean; ms?: number; passages_scanned?: number;
+  query: { raw: string; compiled: string; drift_terms: string[]; entities: { kind: string; value: string; sent: boolean }[] };
+  edits: { label: string; before: string; after: string; direction: "up" | "down" }[];
+  search: null | { ok: boolean; status: string; error?: string; ms: number; session_id?: string; raw_hits?: number;
+    queries?: number; providers: { name: string; ok: boolean }[]; results: { title: string; url: string; providers: string[]; score: number; snippet: string }[] };
+  fetch: null | { ok: boolean; status: string; error?: string; ms: number; docs: { url: string; title?: string | null; ok: boolean; chars: number; provider?: string | null }[] };
+  verdict: null | { status: "edit_supported" | "partially_supported" | "unverified" | "context_only"; headline: string;
+    checks: { label: string; name: string; edit: string; supported: boolean }[]; citations: TelemCitation[] };
+  monitor: TelemMonitor | null;
+};

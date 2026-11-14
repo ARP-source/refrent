@@ -21,6 +21,8 @@ import secrets
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+import home_page
+import telem_pipeline
 import mock_portals
 import seed_vault
 from browser_agent import BrowserAgent
@@ -105,6 +107,7 @@ async def _start_agent_later() -> None:
 app = FastAPI(title="RecallOS", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=list(settings.frontend_origins), allow_methods=["*"], allow_headers=["*"])
 app.include_router(mock_portals.router)
+app.include_router(home_page.router)
 
 
 def status_payload() -> dict[str, Any]:
@@ -472,6 +475,7 @@ async def run_recall(query: str, do_replay: bool, do_enrich: bool, graph_preview
         await asyncio.sleep(2.5)
     top = vault.get(r0["id"])
     restored = await restore(run, top, do_replay, do_enrich)
+    start_telem(run, top, query, resolved, restored, do_enrich)
     telemetry = make_telemetry(run, search, resolved, restored.get("enrichment"), results)
     out = {"rid": run.rid, "resolved": resolved.public(), "search": _search_public(search), "baseline": baseline,
            "ambiguous": False, "margin": round(margin, 4), "episode": {**top.public(), "body": top.body}, **restored,
@@ -491,6 +495,7 @@ async def run_choice(ctx: dict[str, Any], note_id: str, do_replay: bool, do_enri
     await hub.emit({"type": "graph_scores", "rid": run.rid, "scores": search["all_scores"], "node_scores": search["node_scores"],
                     "seeds": search["ppr_seeds"], "top": note_id, "path": path, "ambiguous": [], "query_label": ctx["query"]})
     restored = await restore(run, n, do_replay, do_enrich)
+    start_telem(run, n, ctx["query"], ctx["resolved"], restored, do_enrich)
     telemetry = make_telemetry(run, search, ctx["resolved"], restored.get("enrichment"), results, top_id=note_id)
     out = {"rid": run.rid, "resolved": ctx["resolved"].public(), "search": _search_public(search), "baseline": ctx["baseline"],
            "ambiguous": False, "chosen": True, "episode": {**n.public(), "body": n.body}, **restored, "telemetry": telemetry, "path": path}
@@ -549,6 +554,51 @@ async def restore(run: Run, top: Note, do_replay: bool, do_enrich: bool) -> dict
 
     await asyncio.gather(replay_task(), enrich_task())
     return out
+
+
+last_edits: dict[str, list[dict[str, Any]]] = {}
+
+
+def start_telem(run: Run, note: Note, query: str, resolved: Resolved, restored: dict[str, Any], do_enrich: bool) -> None:
+    """Telem grounding (search -> fetch -> verdict) runs after the page is restored, streaming each stage to the UI."""
+    if not do_enrich:
+        return
+    tags = public_tags_for(note)
+    last_edits[note.id] = telem_pipeline.label_changes(restored.get("changes"))
+
+    async def go() -> None:
+        await run.trace("telem", "Telem AI grounding pipeline",
+                        f"graph-compiled query -> {telem_pipeline.pipeline.host}/v1/search -> /v1/fetch -> grounded verdict on the edit")
+        res = await telem_pipeline.safe_run(hub.emit, run.rid, note, query, resolved.public(), tags, restored.get("changes"))
+        if res and res.get("verdict"):
+            await run.trace("telem_done", "Telem grounded verdict", res["verdict"]["headline"])
+
+    asyncio.create_task(go())
+
+
+class MonitorIn(BaseModel):
+    note_id: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/api/telem/monitors")
+async def api_arm_monitor(body: MonitorIn):
+    n = vault.get(body.note_id)
+    if not n:
+        raise HTTPException(404, "unknown note")
+    try:
+        rec = await telem_pipeline.pipeline.arm_monitor(n, public_tags_for(n), last_edits.get(n.id, []))
+    except Exception as exc:
+        raise HTTPException(502, f"Telem monitor could not be armed: {exc}")
+    await hub.emit({"type": "telem_monitor", "note_id": n.id, "monitor": rec})
+    return rec
+
+
+@app.get("/api/telem/monitors/{note_id}")
+async def api_get_monitor(note_id: str):
+    rec = await telem_pipeline.pipeline.refresh_monitor(note_id)
+    if not rec:
+        raise HTTPException(404, "no monitor for this note")
+    return rec
 
 
 def _search_public(search: dict[str, Any]) -> dict[str, Any]:

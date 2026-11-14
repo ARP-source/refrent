@@ -16,6 +16,8 @@ import {
   type Status,
   type Tab,
   type Telemetry,
+  type TelemMonitor,
+  type TelemRun,
   VIEW_H,
   VIEW_W,
   type TraceStep,
@@ -58,6 +60,8 @@ export function useRecall() {
   const [history, setHistory] = useState<{ query: string; title: string; score: number }[]>([]);
   const [graphRun, setGraphRun] = useState(0);
   const [snapshotOpen, setSnapshotOpen] = useState(false);
+  const [telem, setTelem] = useState<TelemRun | null>(null);
+  const [arming, setArming] = useState(false);
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
 
@@ -132,6 +136,7 @@ export function useRecall() {
             setAgent(msg as AgentEvent);
             break;
           case "recall_start":
+            setTelem(null);
             setResult(null);
             setTelemetry(null);
             setAgent(null);
@@ -166,6 +171,12 @@ export function useRecall() {
             break;
           case "enrichment":
             setEnrichment(msg as Enrichment);
+            break;
+          case "telem":
+            setTelem(msg as TelemRun);
+            break;
+          case "telem_monitor":
+            setTelem((t) => (t && t.note_id === msg.note_id ? { ...t, monitor: msg.monitor } : t));
             break;
           case "telemetry":
             setTelemetry(msg as Telemetry);
@@ -277,6 +288,20 @@ export function useRecall() {
     if (!r.ok) setError((await r.json().catch(() => ({}))).detail ?? "replay failed");
   }, []);
 
+  const armMonitor = useCallback(async (noteId: string) => {
+    setArming(true);
+    try {
+      const r = await fetch(`${API}/api/telem/monitors`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ note_id: noteId }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail || `HTTP ${r.status}`);
+      const monitor = (await r.json()) as TelemMonitor;
+      setTelem((t) => (t && t.note_id === noteId ? { ...t, monitor } : t));
+    } catch (e) {
+      setError(`Telem monitor: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setArming(false);
+    }
+  }, []);
+
   return {
     connected, status, frame, url, title, cursor, bbox, agent, trace, telemetry, enrichment, result,
     scores, nodeScores, topId, path, ambiguousIds, queryLabel, ambiguity, changes,
@@ -284,5 +309,6 @@ export function useRecall() {
     tabs, viewport, navigate, newTab, closeTab, switchTab, resizeViewport,
     send, recall, choose, capture, replayNote, loadGraph,
     graphRun, snapshotOpen, setSnapshotOpen, captureMessage, setCaptureMessage, capturing,
+    telem, setTelem, armMonitor, arming,
   };
 }

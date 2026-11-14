@@ -28,7 +28,7 @@ module.exports = function installNativeBrowser(win, { base, token, cdp }) {
     }
   };
   const normalize = (raw) => {
-    let url = String(raw || base + "/portals/canvas/").trim();
+    let url = String(raw || base + "/home").trim();
     if (url.startsWith("/")) url = base + url;
     if (!/^https?:\/\//i.test(url)) {
       if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^(localhost|127\.0\.0\.1):\d+/i.test(url)) throw new Error("Only http and https addresses are supported.");

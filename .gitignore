@@ -22,3 +22,6 @@ desktop/dist/
 # os / editor
 .DS_Store
 Thumbs.db
+
+# local Telem monitor ids
+backend/telem_monitors.json

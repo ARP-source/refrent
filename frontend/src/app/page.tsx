@@ -10,6 +10,7 @@ import { useRecall } from "@/lib/useRecall";
 import { desktop } from "@/lib/desktop";
 import RestoreBanner, { HistoricalSnapshot } from "@/components/RestoreBanner";
 import AmbiguityDialog from "@/components/AmbiguityDialog";
+import TelemPanel from "@/components/TelemPanel";
 import { X } from "lucide-react";
 
 const PIN_KEY = "referent.pinChrome";
@@ -148,6 +149,7 @@ export default function Home() {
       <div className="flex min-h-0 flex-1 gap-2 p-2">
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] shadow-[0_24px_60px_-28px_rgba(6,48,84,.55),0_0_0_1px_rgba(255,255,255,.7)]">
           <RestoreBanner s={s} />
+          <TelemPanel s={s} />
           <div className="min-h-0 flex-1">
             <BrowserViewport s={s} />
           </div>

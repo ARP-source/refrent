@@ -26,7 +26,7 @@ class Settings:
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
 
-    telem_base: str = os.getenv("TELEM_BASE_URL", "https://hack.telem.ai/api")
+    telem_base: str = os.getenv("TELEM_BASE_URL", "https://router.telem.ai")
     anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-haiku-5-5")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
