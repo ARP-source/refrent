@@ -698,7 +698,16 @@ _UI_DIR = Path(__file__).resolve().parent.parent / "frontend" / "out"
 if _UI_DIR.is_dir():
     from fastapi.staticfiles import StaticFiles
 
-    app.mount("/", StaticFiles(directory=_UI_DIR, html=True), name="ui")
+    class UIStatic(StaticFiles):
+        """HTML must revalidate on every load (a rebuilt UI is picked up at once); hashed /_next assets are immutable."""
+
+        def file_response(self, *args: Any, **kwargs: Any):
+            resp = super().file_response(*args, **kwargs)
+            ctype = resp.headers.get("content-type", "")
+            resp.headers["Cache-Control"] = "no-cache" if "text/html" in ctype or "text/plain" in ctype else "public, max-age=31536000, immutable"
+            return resp
+
+    app.mount("/", UIStatic(directory=_UI_DIR, html=True), name="ui")
 
 
 if __name__ == "__main__":

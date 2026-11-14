@@ -300,8 +300,14 @@ class BrowserAgent:
             self.active_id = tid
             self.page = self.tabs[tid]
             self.session_actions = []
-            size = await self.page.evaluate("({w: innerWidth, h: innerHeight})")
-            self.vw, self.vh = size["w"], size["h"]
+            # the tab may be mid-navigation (e.g. a fresh tab loading /home): keep the last size rather than fail
+            for _ in range(3):
+                try:
+                    size = await self.page.evaluate("({w: innerWidth, h: innerHeight})")
+                    self.vw, self.vh = size["w"], size["h"]
+                    break
+                except Exception:
+                    await asyncio.sleep(0.15)
             await self.emit({"type": "url", "url": self.page.url, "title": await self._safe_title(self.page)})
             await self.emit_tabs()
             return

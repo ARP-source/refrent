@@ -134,7 +134,7 @@ export default function Home() {
     <main className="relative flex h-screen flex-col overflow-hidden">
       <DreamBackground />
       <div ref={chromeBox} onMouseEnter={enterChrome} onMouseLeave={leaveChrome} className="relative z-30 shrink-0">
-        <div className="chrome-wrap" data-hidden={!chromeVisible}>
+        <div className="chrome-wrap" data-hidden={!chromeVisible} data-instant={electron}>
           <div>
             <BrowserChrome ref={chrome} s={s} panels={panels} toggle={toggle} closePanels={closePanels} electron={electron}
               pinned={pinned} onPin={togglePin} onFocusChange={setOmniFocused}

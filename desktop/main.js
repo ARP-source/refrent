@@ -130,7 +130,8 @@ function createWindow() {
       if (/^https?:\/\//i.test(url)) native.open(url);
     }
   });
-  win.loadURL(`${BASE}/`);
+  // the UI is rebuilt often; never paint a stale cached copy of the app shell
+  win.webContents.session.clearCache().catch(() => {}).finally(() => win.loadURL(`${BASE}/`));
   win.once("ready-to-show", () => {
     if (!SMOKE) win.maximize();
     if (!TEST) win.show();
