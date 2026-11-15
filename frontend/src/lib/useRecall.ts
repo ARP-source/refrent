@@ -18,6 +18,7 @@ import {
   type Telemetry,
   type TelemMonitor,
   type TelemRun,
+  type TaskStep,
   VIEW_H,
   VIEW_W,
   type TraceStep,
@@ -62,6 +63,7 @@ export function useRecall() {
   const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [telem, setTelem] = useState<TelemRun | null>(null);
   const [arming, setArming] = useState(false);
+  const [taskSteps, setTaskSteps] = useState<Record<string, TaskStep[]>>({});
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
 
@@ -174,6 +176,9 @@ export function useRecall() {
             break;
           case "telem":
             setTelem(msg as TelemRun);
+            break;
+          case "task_step":
+            setTaskSteps((t) => ({ ...t, [msg.task_id]: msg.steps as TaskStep[] }));
             break;
           case "telem_monitor":
             setTelem((t) => (t && t.note_id === msg.note_id ? { ...t, monitor: msg.monitor } : t));
@@ -309,6 +314,6 @@ export function useRecall() {
     tabs, viewport, navigate, newTab, closeTab, switchTab, resizeViewport,
     send, recall, choose, capture, replayNote, loadGraph,
     graphRun, snapshotOpen, setSnapshotOpen, captureMessage, setCaptureMessage, capturing,
-    telem, setTelem, armMonitor, arming,
+    telem, setTelem, armMonitor, arming, taskSteps,
   };
 }

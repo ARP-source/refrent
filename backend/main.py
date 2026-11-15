@@ -576,6 +576,142 @@ def start_telem(run: Run, note: Note, query: str, resolved: Resolved, restored: 
     asyncio.create_task(go())
 
 
+class AssistantIn(BaseModel):
+    message: str = Field(min_length=1, max_length=600)
+    task_id: str | None = Field(default=None, max_length=40)
+
+
+RECALL_CUES = re.compile(
+    r"\b(recall|remember|i (?:was )?(?:looking|reading|saw|seen|had|opened|read|checked|reviewed)|we (?:reviewed|revised|checked|looked|discussed)|"
+    r"pull (?:up|back)|bring (?:up|back)|take me back|what was (?:that|the)|that (?:one|thing|doc|page|guide|sheet|file|paper|commit|proposal|primer)|"
+    r"last (?:night|week|time)|yesterday|ago|before (?:the|class|my|office))\b", re.I)
+CONTACT_CUES = re.compile(r"\b(contact|email|e-mail|phone|reach|linkedin|find (?:people|person|someone)|who is|look (?:for|up)|people)\b", re.I)
+
+
+def person_context(message: str) -> list[dict[str, Any]]:
+    """People the vault already knows about: role line and the latest episodes with them (all local)."""
+    out = []
+    for hid in vault.mentions(message):
+        n = vault.notes.get(hid)
+        if not n or n.type != "person":
+            continue
+        role = next((ln.strip() for ln in n.body.splitlines() if ln.strip() and not ln.startswith("#")), "")
+        eps = sorted((e for e in vault.notes.values() if e.type == "episode" and n.title in (e.people or []) and e.url),
+                     key=lambda e: e.timestamp or datetime.min, reverse=True)[:3]
+        out.append({"name": n.title, "role": re.sub(r"\[\[([^\]|]+)(\|[^\]]+)?\]\]", r"\1", role)[:220],
+                    "recent": [{"title": e.title, "url": e.url, "when": e.timestamp.isoformat() if e.timestamp else None} for e in eps]})
+    return out
+
+
+@app.post("/api/assistant")
+async def api_assistant(body: AssistantIn):
+    """One chat box for everything: recall a memory, or run a web task (people, contacts, look-ups) and take over the browser."""
+    msg = body.message.strip()
+    if RECALL_CUES.search(msg) and not CONTACT_CUES.search(msg):
+        if recall_lock.locked():
+            raise HTTPException(409, "a recall is already running")
+        async with recall_lock:
+            res = await run_recall(msg, True, True, False)
+        ep = res.get("episode")
+        ch = res.get("changes") or {}
+        return {"kind": "recall", "rid": res["rid"], "ambiguous": bool(res.get("ambiguous")),
+                "candidates": [{"id": c["id"], "title": c["title"], "timestamp": c.get("timestamp"), "people": c.get("people", []), "url": c.get("url")}
+                               for c in res.get("candidates") or []],
+                "episode": {"id": ep["id"], "title": ep["title"], "url": ep.get("url"), "timestamp": ep.get("timestamp"), "people": ep.get("people", [])} if ep else None,
+                "changed": ch.get("status") == "changed", "edited_by": ch.get("edited_by"),
+                "edits": [{"before": c["before"], "after": c["after"]} for c in (ch.get("changes") or [])[:4]],
+                "web": [{"title": r["title"], "url": r["url"]} for r in ((res.get("enrichment") or {}).get("results") or [])[:4]]}
+    return await run_task(msg, body.task_id or uuid.uuid4().hex[:8])
+
+
+async def run_task(msg: str, tid: str) -> dict[str, Any]:
+    """Agent takeover: vault context -> Telem search -> visit and read the top pages in the user's own tab -> report.
+    Every step is streamed to the side panel as it happens."""
+    steps: list[dict[str, Any]] = []
+
+    async def step(text: str, state: str = "run", **extra: Any) -> int:
+        steps.append({"text": text, "state": state, **extra})
+        await hub.emit({"type": "task_step", "task_id": tid, "steps": steps})
+        return len(steps) - 1
+
+    async def done(i: int, text: str | None = None, state: str = "done") -> None:
+        steps[i].update({"state": state, **({"text": text} if text else {})})
+        await hub.emit({"type": "task_step", "task_id": tid, "steps": steps})
+
+    i = await step("Reading your vault for context")
+    people = person_context(msg)
+    await done(i, f"Vault context: {', '.join(p['name'] for p in people)}" if people else "No matching people or notes in your vault")
+
+    explicit_contact = bool(re.search(r"\b(contact|email|e-mail|phone|linkedin|reach)\b", msg, re.I))
+    if people and not explicit_contact:
+        # someone you already know: act from the vault (your shared history), don't web-search a namesake
+        latest = next((e for p in people for e in p["recent"]), None)
+        if latest:
+            i = await step(f"Opening your latest page with {people[0]['name']}", url=latest["url"])
+            await agent.navigate(latest["url"])
+            await done(i)
+        await step("Done")
+        return {"kind": "task", "task_id": tid, "people": people, "opened": latest["url"] if latest else None,
+                "ok": True, "results": [], "contacts": [], "steps": steps, "vault_only": True}
+
+    want_contacts = bool(CONTACT_CUES.search(msg))
+    i = await step("Searching the web with Telem")
+    res = await telem_pipeline.web_task(msg, False)
+    await done(i, f"Telem: {len(res['results'])} results in {res['search_ms']} ms" if res["ok"] else f"Telem search failed: {res.get('status')}",
+               "done" if res["ok"] else "warn")
+
+    contacts: list[dict[str, str]] = []
+    seen: set[str] = set()
+    visited: list[str] = []
+    best = None
+    pages = [r for r in res["results"] if not re.search(r"\.(pdf|zip|docx?|pptx?)(\?|$)", r["url"], re.I)]
+    for r in pages[:3 if want_contacts else 1]:
+        i = await step(f"Opening {r['url'].split('/')[2] if '//' in r['url'] else r['url']}", url=r["url"])
+        try:
+            # visible takeover, but bounded: start rendering, give it a moment, never hang on a slow site
+            try:
+                await asyncio.wait_for(agent.page.goto(r["url"], wait_until="commit", timeout=12000), 13)
+            except asyncio.TimeoutError:
+                pass
+            for _ in range(10):
+                await asyncio.sleep(0.4)
+                if await agent.page.evaluate("document.readyState !== 'loading' && !!document.body && document.body.innerText.length > 200"):
+                    break
+            text = await agent.page.evaluate("document.body ? document.body.innerText.slice(0, 80000) : ''") if agent.page else ""
+            hrefs = await agent.page.evaluate("[...document.querySelectorAll('a[href]')].slice(0, 400).map(a => a.href)") if agent.page else []
+        except Exception as exc:
+            await done(i, f"Could not read {r['url'][:60]}: {str(exc)[:80]}", "warn")
+            continue
+        visited.append(r["url"])
+        found = 0
+        blob = text + "\n" + "\n".join(h.replace("mailto:", "") for h in hrefs)
+        for kind, rx in (("email", telem_pipeline.EMAIL_RX), ("phone", telem_pipeline.PHONE_RX), ("profile", telem_pipeline.PROFILE_RX)):
+            for v in rx.findall(blob):
+                v = v.strip().rstrip(".,;")
+                if kind == "email" and telem_pipeline._JUNK_EMAIL.search(v):
+                    continue
+                if v.lower() in seen or len(contacts) >= 12:
+                    continue
+                seen.add(v.lower())
+                contacts.append({"type": kind, "value": v, "source": r["url"]})
+                found += 1
+        if found and not best:
+            best = r["url"]
+        await done(i, f"Read {r['url'].split('/')[2]}" + (f" · {found} contact detail{'s' if found != 1 else ''}" if want_contacts else ""))
+
+    final = best or (visited[0] if visited else None)
+    if final and visited and final != visited[-1]:
+        i = await step(f"Back to the best page: {final.split('/')[2]}", url=final)
+        try:
+            await asyncio.wait_for(agent.page.goto(final, wait_until="commit", timeout=10000), 11)
+        except Exception:
+            pass
+        await done(i)
+    await step("Done" if visited else "Could not open any page", "done" if visited else "warn")
+    return {"kind": "task", "task_id": tid, "people": people, "opened": final, **res, "contacts": contacts, "steps": steps,
+            "namesake_warning": bool(people)}
+
+
 class MonitorIn(BaseModel):
     note_id: str = Field(min_length=1, max_length=200)
 

@@ -347,3 +347,32 @@ async def safe_run(*args: Any, **kwargs: Any) -> dict[str, Any] | None:
     except Exception as exc:  # grounding must never break a recall
         print(f"[telem] pipeline failed: {exc}")
         return None
+
+
+# ---------------------------------------------------------------------------- assistant web tasks
+EMAIL_RX = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+PHONE_RX = re.compile(r"(?:\+?\d{1,2}[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}")
+PROFILE_RX = re.compile(r"https?://(?:www\.)?(?:linkedin\.com/in|twitter\.com|x\.com|github\.com|scholar\.google\.com/citations)[^\s)\]\"'>]+", re.I)
+_JUNK_EMAIL = re.compile(r"(example\.|sentry|noreply|no-reply|wixpress|\.png|\.jpg|\.svg|@2x)", re.I)
+
+
+async def web_task(message: str, want_contacts: bool) -> dict[str, Any]:
+    """Run a user-requested web task through Telem: search, fetch the top pages, pull out contacts and links."""
+    async with httpx.AsyncClient() as client:
+        s = await pipeline.search(client, [message])
+        urls = [r["url"] for r in s.get("results", [])[:3]]
+        f = await pipeline.fetch(client, urls) if (s.get("ok") and want_contacts and urls) else {"ok": False, "docs": [], "ms": 0}
+    contacts: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for d in f.get("docs", []):
+        text = d.get("text") or ""
+        found = [("email", e) for e in EMAIL_RX.findall(text) if not _JUNK_EMAIL.search(e)]
+        found += [("phone", p.strip()) for p in PHONE_RX.findall(text)]
+        found += [("profile", u.rstrip(".,;")) for u in PROFILE_RX.findall(text)]
+        for kind, value in found:
+            if value.lower() not in seen and len(contacts) < 12:
+                seen.add(value.lower())
+                contacts.append({"type": kind, "value": value, "source": d["url"]})
+    return {"ok": s.get("ok", False), "status": s.get("status"), "error": s.get("error"),
+            "results": [{"title": r["title"], "url": r["url"], "snippet": r["snippet"], "providers": r["providers"]} for r in s.get("results", [])[:6]],
+            "contacts": contacts, "search_ms": s.get("ms", 0), "fetch_ms": f.get("ms", 0), "fetched": len([d for d in f.get("docs", []) if d.get("ok")])}

@@ -3,14 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import BrowserChrome, { type ChromeHandle, type Panels } from "@/components/BrowserChrome";
 import BrowserViewport from "@/components/BrowserViewport";
-import AnswerPanel from "@/components/CommandBar";
+import AssistantPanel from "@/components/AssistantPanel";
 import DreamBackground from "@/components/DreamBackground";
 import ObsidianPane from "@/components/ObsidianPane";
 import { useRecall } from "@/lib/useRecall";
 import { desktop } from "@/lib/desktop";
-import RestoreBanner, { HistoricalSnapshot } from "@/components/RestoreBanner";
-import AmbiguityDialog from "@/components/AmbiguityDialog";
-import TelemPanel from "@/components/TelemPanel";
+import { HistoricalSnapshot } from "@/components/RestoreBanner";
 import { X } from "lucide-react";
 
 const PIN_KEY = "referent.pinChrome";
@@ -21,7 +19,6 @@ export default function Home() {
   const [electron, setElectron] = useState(false);
   const [panels, setPanels] = useState<Panels>({ recall: false, vault: false });
   const [dismissedChoice, setDismissedChoice] = useState<string | null>(null);
-  const [choiceReady, setChoiceReady] = useState(false);
   const choreography = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---- auto-hiding top chrome: visible while hovered, focused, pinned, or briefly after a shortcut
@@ -73,14 +70,12 @@ export default function Home() {
     setPanels((v) => ({ recall: p === "recall" && !v.recall, vault: p === "vault" && !v.vault }));
   }, []);
   const closePanels = () => { if (choreography.current) clearTimeout(choreography.current); setPanels({ recall: false, vault: false }); };
-  const showChoice = !!s.ambiguity && choiceReady && dismissedChoice !== s.ambiguity.rid;
+  const showChoice = false; // ambiguity choices are made inside the assistant panel
 
+  // any recall (omnibox, new-tab page, assistant) shows its answer in the assistant side panel
   useEffect(() => {
     if (!s.graphRun) return;
-    setChoiceReady(false);
-    setPanels({ vault: true, recall: false });
-    choreography.current = setTimeout(() => { setPanels({ vault: false, recall: false }); setChoiceReady(true); }, 2500);
-    return () => { if (choreography.current) clearTimeout(choreography.current); };
+    setPanels((p) => (p.vault ? p : { vault: false, recall: true }));
   }, [s.graphRun]);
 
   useEffect(() => {
@@ -138,7 +133,7 @@ export default function Home() {
           <div>
             <BrowserChrome ref={chrome} s={s} panels={panels} toggle={toggle} closePanels={closePanels} electron={electron}
               pinned={pinned} onPin={togglePin} onFocusChange={setOmniFocused}
-              onRecall={() => { setChoiceReady(false); setPanels({ vault: true, recall: false }); }} />
+              onRecall={() => setPanels({ vault: false, recall: true })} />
           </div>
         </div>
         {!chromeVisible && <button aria-label="Show toolbar" title="Show toolbar (Ctrl+L)" onClick={() => reveal(4000)} className="group block h-3 w-full"><span className="reveal-strip block group-hover:opacity-100" /></button>}
@@ -148,29 +143,20 @@ export default function Home() {
 
       <div className="flex min-h-0 flex-1 gap-2 p-2">
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] shadow-[0_24px_60px_-28px_rgba(6,48,84,.55),0_0_0_1px_rgba(255,255,255,.7)]">
-          <RestoreBanner s={s} />
-          <TelemPanel s={s} />
           <div className="min-h-0 flex-1">
             <BrowserViewport s={s} />
           </div>
         </div>
         {dock && (
-          <aside className={`dock-in flex shrink-0 flex-col gap-2 ${panels.vault ? "w-[46%]" : "w-[420px]"}`}>
-            <div className="flex items-center justify-between px-3 pt-1 text-xs font-semibold text-sky-900"><span>{panels.vault ? "Episodic vault graph" : "Search intelligence & baseline"}</span><button aria-label="Close panel" className="rounded-lg p-1 hover:bg-white/70" onClick={closePanels}><X size={15} /></button></div>
-            {panels.recall && (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <AnswerPanel s={s} />
-              </div>
-            )}
-            {panels.vault && (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <ObsidianPane s={s} />
-              </div>
-            )}
+          <aside className={`dock-in flex shrink-0 flex-col gap-2 ${panels.vault ? "w-[46%]" : "w-[400px]"}`}>
+            {panels.recall && <AssistantPanel s={s} onClose={closePanels} />}
+            {panels.vault && <>
+              <div className="flex items-center justify-between px-3 pt-1 text-xs font-semibold text-sky-900"><span>Episodic vault graph</span><button aria-label="Close panel" className="rounded-lg p-1 hover:bg-white/70" onClick={closePanels}><X size={15} /></button></div>
+              <div className="flex min-h-0 flex-1 flex-col"><ObsidianPane s={s} /></div>
+            </>}
           </aside>
         )}
       </div>
-      {showChoice && <AmbiguityDialog s={s} onClose={() => { setDismissedChoice(s.ambiguity!.rid); setPanels({ vault: false, recall: true }); }} />}
       <HistoricalSnapshot s={s} />
     </main>
   );

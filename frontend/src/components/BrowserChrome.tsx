@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BarChart3, Camera, Globe, Lock, Maximize2, Minimize2, Minus, Network, Pin, PinOff, Plus, RotateCw, Search, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, MessageSquareText, Globe, Lock, Maximize2, Minimize2, Minus, Network, Pin, PinOff, Plus, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { RecallState } from "@/lib/useRecall";
 import { desktop } from "@/lib/desktop";
@@ -114,7 +114,7 @@ export default forwardRef<ChromeHandle, Props>(
         <div className="flex items-center gap-0.5 rounded-2xl bg-sky-900/[0.06] p-0.5">
           <button title="Full-screen live browser" aria-pressed={!panels.vault && !panels.recall} onClick={closePanels} className={seg(!panels.vault && !panels.recall)}><Globe size={14} /><span className="hidden lg:inline">Live Browser</span></button>
           <button title="Episodic vault graph (Ctrl+B)" aria-pressed={panels.vault} onClick={() => toggle("vault")} className={seg(panels.vault)}><Network size={14} /><span className="hidden lg:inline">Vault Graph</span></button>
-          <button title="Search intelligence & baseline (Ctrl+J)" aria-pressed={panels.recall} onClick={() => toggle("recall")} className={seg(panels.recall)}><BarChart3 size={14} /><span className="hidden lg:inline">Search Intelligence</span></button>
+          <button title="Assistant: recall or delegate a task (Ctrl+J)" aria-pressed={panels.recall} onClick={() => toggle("recall")} className={seg(panels.recall)}><MessageSquareText size={14} /><span className="hidden lg:inline">Assistant</span></button>
           <button title="Capture current view into the vault" disabled={s.capturing || s.running} onClick={() => s.capture()} className={`${seg(false)} disabled:opacity-40`}><Camera size={14} /><span className="hidden lg:inline">{s.capturing ? "Saving…" : "Capture"}</span></button>
         </div>
         <button title={pinned ? "Unpin toolbar (auto-hide when idle)" : "Pin toolbar open"} aria-label={pinned ? "Unpin toolbar" : "Pin toolbar"} aria-pressed={pinned} onClick={onPin}
@@ -122,13 +122,6 @@ export default forwardRef<ChromeHandle, Props>(
         <span title={ready ? "Browser ready" : "Connecting"} className={`mx-1.5 h-2 w-2 rounded-full ${ready ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,.8)]" : "bg-orange-400"}`} />
       </div>
 
-      {/* row 3: one-click demo memories */}
-      <div className="flex h-9 items-center gap-2 overflow-x-auto px-3 text-[11px]">
-        <span className="shrink-0 font-semibold uppercase tracking-widest text-sky-800/55">Try a memory</span>
-        {DEMOS.map((demo) => <button key={demo.label} title={demo.query} disabled={s.running} onClick={() => recall(demo.query)}
-          className="shrink-0 rounded-full bg-white/70 px-3 py-1 font-medium text-sky-900 shadow-[inset_0_0_0_1px_rgba(2,121,179,.15)] transition hover:bg-white hover:text-orange-600 hover:shadow-[inset_0_0_0_1px_rgba(252,115,77,.5)] disabled:opacity-40">{demo.label}</button>)}
-        <span className="ml-auto hidden shrink-0 text-sky-800/50 md:inline">Ctrl+L / Ctrl+K to show · move to the top edge to reveal</span>
-      </div>
     </header>;
   }
 );

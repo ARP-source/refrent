@@ -184,3 +184,5 @@ export type TelemRun = {
     checks: { label: string; name: string; edit: string; supported: boolean }[]; citations: TelemCitation[] };
   monitor: TelemMonitor | null;
 };
+
+export type TaskStep = { text: string; state: "run" | "done" | "warn"; url?: string };
