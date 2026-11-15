@@ -178,7 +178,7 @@ export default function AssistantPanel({ s, onClose }: { s: RecallState; onClose
       <div className="glass-input flex items-end gap-2 rounded-2xl px-3 py-2">
         <textarea ref={input} value={text} rows={1} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }}
-          placeholder="Recall something, or ask me to find people, contacts…" aria-label="Message the assistant"
+          placeholder="Recall something, or hand me a task…" aria-label="Message the assistant"
           className="max-h-32 min-h-[22px] flex-1 resize-none bg-transparent text-[13px] leading-snug text-sky-950 outline-none placeholder:text-sky-900/40" />
         <button type="submit" disabled={!text.trim() || busy} aria-label="Send" className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange-500 text-white shadow-[0_4px_12px_-4px_rgba(252,115,77,.9)] disabled:opacity-40"><ArrowUp size={16} /></button>
       </div>
